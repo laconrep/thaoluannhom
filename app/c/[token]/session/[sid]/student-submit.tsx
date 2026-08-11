@@ -121,6 +121,7 @@ export function StudentSubmit({
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [selfStudentId, setSelfStudentId] = useState<string | null>(null)
+  const [identityLoaded, setIdentityLoaded] = useState(false)
   const autoSubmitted = useRef(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -145,6 +146,7 @@ export function StudentSubmit({
     if (saved && students.some((s) => s.id === saved)) {
       setSelfStudentId(saved)
     }
+    setIdentityLoaded(true)
   }, [kind, session.id, session.use_fixed_groups, students])
 
   // Realtime
@@ -302,12 +304,12 @@ export function StudentSubmit({
   }
 
   useEffect(() => {
-    if (!ended || autoSubmitted.current || submitted || !selectedId) return
+    if (!identityLoaded || !ended || autoSubmitted.current || submitted || !selectedId) return
     if (!text.trim() && !staged.length) return
     autoSubmitted.current = true
     handleSubmit(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ended])
+  }, [ended, identityLoaded, selectedId, staged.length, submitted, text])
 
   if (submitted) {
     const returnHref = typeof window !== "undefined" ? `/c/${window.location.pathname.split("/")[2]}` : "/"

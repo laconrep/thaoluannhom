@@ -53,7 +53,6 @@ export function ClassLobby({
   const [students, setStudents] = useState(initialStudents)
   const [sessions, setSessions] = useState(initialSessions)
   const [myStudentId, setMyStudentId] = useState<string | null>(null)
-  const [deviceToken, setDeviceToken] = useState<string>("")
   const [name, setName] = useState("")
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null)
   const [saving, startTransition] = useTransition()
@@ -61,7 +60,6 @@ export function ClassLobby({
   // Load identity from localStorage
   useEffect(() => {
     const dt = getDeviceToken()
-    setDeviceToken(dt)
     const saved = localStorage.getItem(`class_${classId}_student`)
     if (saved) {
       const st = students.find((s) => s.id === saved)
@@ -128,7 +126,7 @@ export function ClassLobby({
     setMyStudentId(studentId)
     localStorage.setItem(`class_${classId}_student`, studentId)
     startTransition(() => {
-      studentSetNameAction(studentId, name.trim(), deviceToken)
+      studentSetNameAction(studentId, name.trim(), getDeviceToken())
     })
   }
 

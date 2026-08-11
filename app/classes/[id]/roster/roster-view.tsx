@@ -97,7 +97,7 @@ export function RosterView({
     if (typeof window === "undefined") return
     const key = `roster_intro_seen_${classId}`
     if (groups.length > 0 && !localStorage.getItem(key)) {
-      setIntroOpen(true)
+      setIntroOpen((current) => (current ? current : true))
     }
   }, [classId, groups.length])
 

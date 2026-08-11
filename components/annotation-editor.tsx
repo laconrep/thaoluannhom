@@ -475,9 +475,7 @@ export function AnnotationEditor({
 
   const cursor =
     tool === "pan"
-      ? panRef.current.active
-        ? "grabbing"
-        : "grab"
+      ? "grab"
       : tool === "text"
         ? "text"
         : canAnnotate
@@ -823,7 +821,7 @@ export function AnnotationEditor({
             width: "fit-content",
             transform: `scale(${zoomLevel})`,
             transformOrigin: "top center",
-            transition: panRef.current.active ? "none" : "transform 120ms ease-out",
+            transition: "transform 120ms ease-out",
           }}
         >
           <div
