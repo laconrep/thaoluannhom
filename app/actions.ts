@@ -31,7 +31,11 @@ export async function createClassAction(formData: FormData) {
     slot_number: i + 1,
     name: null,
   }))
-  await supabase.from("students").insert(slots)
+  const { error: studentsError } = await supabase.from("students").insert(slots)
+  if (studentsError) {
+    await supabase.from("classes").delete().eq("id", cls.id)
+    throw new Error(`Không tạo được danh sách học sinh: ${studentsError.message}`)
+  }
 
   // Tạo nhóm cố định với màu riêng
   const groups = Array.from({ length: numGroups }, (_, i) => ({
@@ -42,7 +46,11 @@ export async function createClassAction(formData: FormData) {
     color: colorForIndex(i),
     display_order: i + 1,
   }))
-  await supabase.from("class_groups").insert(groups)
+  const { error: groupsError } = await supabase.from("class_groups").insert(groups)
+  if (groupsError) {
+    await supabase.from("classes").delete().eq("id", cls.id)
+    throw new Error(`Không tạo được nhóm cố định: ${groupsError.message}`)
+  }
 
   revalidatePath("/dashboard")
   redirect(`/classes/${cls.id}/roster`)
