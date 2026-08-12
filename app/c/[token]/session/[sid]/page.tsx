@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { notFound } from "next/navigation"
 import { StudentSubmit } from "./student-submit"
+import { PresentationViewer } from "@/components/presentation-viewer"
 
 export default async function StudentSessionPage({
   params,
@@ -21,6 +22,14 @@ export default async function StudentSessionPage({
     .single()
   if (!session) notFound()
 
+  const { data: presentation } = await supabase
+    .from("presentations")
+    .select("id")
+    .eq("session_id", sid)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   if (session.kind === "group") {
     const [{ data: groups }, { data: groupStudents }] = await Promise.all([
       supabase.from("session_groups").select("*").eq("session_id", sid).order("group_number"),
@@ -31,6 +40,13 @@ export default async function StudentSessionPage({
     ])
 
     return (
+      <PresentationViewer
+        presentationId={presentation?.id ?? ""}
+        sessionId={sid}
+        isTeacher={false}
+        groupCount={groups?.length ?? 0}
+        submissions={[]}
+      >
       <StudentSubmit
         kind="group"
         classId={cls.id}
@@ -41,6 +57,7 @@ export default async function StudentSessionPage({
         students={(groupStudents ?? []) as any}
         shareToken={token}
       />
+      </PresentationViewer>
     )
   }
 

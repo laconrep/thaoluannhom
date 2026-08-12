@@ -26,7 +26,7 @@ import { TimerPanel } from "@/components/timer-panel"
 import { Switch } from "@/components/ui/switch"
 import { sounds, isSoundEnabled, setSoundEnabled } from "@/lib/sounds"
 import { PresentationUpload } from "@/components/presentation-upload"
-import { PresentationViewer } from "@/components/presentation-viewer"
+import { PresentationViewer, startPresentationMode } from "@/components/presentation-viewer"
 import {
   ArrowLeft,
   Link as LinkIcon,
@@ -120,6 +120,9 @@ export function GroupSessionBoard({
 
   useEffect(() => {
     setSoundOn(isSoundEnabled())
+    const openGroupFromProjection = (event: Event) => setOpenGroupId((event as CustomEvent<string>).detail)
+    window.addEventListener("presentation-open-group", openGroupFromProjection)
+    return () => window.removeEventListener("presentation-open-group", openGroupFromProjection)
   }, [])
 
   // Check if user is teacher
@@ -410,7 +413,7 @@ export function GroupSessionBoard({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setSlideshowIdx(0)}
+                onClick={() => presentation ? startPresentationMode() : setSlideshowIdx(0)}
                 className="gap-1"
                 disabled={groups.length === 0}
               >
@@ -723,6 +726,7 @@ export function GroupSessionBoard({
         sessionId={session.id}
         isTeacher={isTeacher}
         groupCount={groups.length}
+        groups={groups}
         submissions={subs}
       >
         {mainContent}
