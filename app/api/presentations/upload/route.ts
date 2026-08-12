@@ -23,11 +23,24 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData()
-    const file = formData.get("file") as File
-    const sessionId = formData.get("sessionId") as string
+    const file = formData.get("file") as File | null
+    const sessionId = formData.get("sessionId") as string | null
+    const allowedTypes = new Set([
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "application/vnd.ms-powerpoint",
+      "application/zip",
+    ])
 
-    if (!file || !sessionId) {
-      return NextResponse.json({ error: "Missing file or sessionId" }, { status: 400 })
+    if (!file || !sessionId || typeof file.arrayBuffer !== "function") {
+      return NextResponse.json({ error: "Thiếu file hoặc sessionId" }, { status: 400 })
+    }
+
+    if (file.size === 0 || file.size > 50 * 1024 * 1024) {
+      return NextResponse.json({ error: "File PowerPoint phải từ 1 byte đến 50 MB." }, { status: 400 })
+    }
+
+    if (!allowedTypes.has(file.type) && !/\.(pptx?|PPTX?)$/.test(file.name)) {
+      return NextResponse.json({ error: "Chỉ hỗ trợ file PowerPoint .ppt hoặc .pptx." }, { status: 415 })
     }
 
     // Check session exists and user is teacher
@@ -56,14 +69,22 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
-    // Estimate slide count from file size (simplified approach)
-    // For production, you'd want to actually parse the PPTX
+    // Estimate slide count from file size while preserving the original deck.
     const slideCount = getEstimatedSlideCount(buffer.length)
 
-    // Create presentation record
     const fileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_")
     const timestamp = Date.now()
-    const storagePath = `presentations/${sessionId}/${timestamp}_${fileName}`
+    const storagePath = `${user.id}/${sessionId}/${timestamp}_${fileName}`
+    const { error: sourceUploadError } = await supabase.storage
+      .from("presentations")
+      .upload(storagePath, buffer, {
+        contentType: file.type || "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        upsert: false,
+      })
+
+    if (sourceUploadError) {
+      return NextResponse.json({ error: `Không tải được file PowerPoint: ${sourceUploadError.message}` }, { status: 502 })
+    }
 
     const { data: presentation, error: presentationError } = await supabase
       .from("presentations")
@@ -71,6 +92,7 @@ export async function POST(request: NextRequest) {
         session_id: sessionId,
         teacher_id: user.id,
         file_name: file.name,
+        file_path: storagePath,
         storage_path: storagePath,
         slide_count: slideCount,
       })
@@ -78,7 +100,8 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (presentationError || !presentation) {
-      return NextResponse.json({ error: "Failed to create presentation record" }, { status: 500 })
+      await supabase.storage.from("presentations").remove([storagePath])
+      return NextResponse.json({ error: `Không lưu được thông tin bài trình chiếu: ${presentationError?.message ?? "unknown error"}` }, { status: 500 })
     }
 
     // Process and store slide images (create placeholder images for now)
@@ -99,7 +122,7 @@ export async function POST(request: NextRequest) {
           .toBuffer()
 
         // Upload image to Supabase storage
-        const imagePath = `${storagePath}/slide_${i + 1}.png`
+        const imagePath = `${user.id}/${sessionId}/${timestamp}_${fileName}/slide_${i + 1}.png`
         const { error: uploadError } = await supabase.storage
           .from("presentations")
           .upload(imagePath, slideImage, {
