@@ -17,20 +17,26 @@ export function PresentationUpload({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileSelect = async (file: File) => {
-    if (!file.name.endsWith(".pptx")) {
-      toast.error("Chỉ hỗ trợ file PowerPoint (.pptx)")
+    if (!/\.pptx?$/i.test(file.name)) {
+      toast.error("Chỉ hỗ trợ file PowerPoint (.ppt hoặc .pptx)")
+      return
+    }
+    if (file.size === 0 || file.size > 50 * 1024 * 1024) {
+      toast.error("File PowerPoint phải từ 1 byte đến 50 MB")
       return
     }
 
     setIsLoading(true)
     try {
-      const formData = new FormData()
-      formData.append("file", file)
-      formData.append("sessionId", sessionId)
-
       const response = await fetch("/api/presentations/upload", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type,
+        }),
       })
 
       if (!response.ok) {
@@ -45,6 +51,21 @@ export function PresentationUpload({
       }
 
       const data = await response.json()
+      const { error: storageError } = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/upload/sign/presentations/${data.upload.path}?token=${encodeURIComponent(data.upload.token)}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": file.type || "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "x-upsert": "false",
+          },
+          body: file,
+        },
+      ).then(async (uploadResponse) => ({
+        error: uploadResponse.ok ? null : new Error(`Storage upload failed with status ${uploadResponse.status}`),
+      }))
+      if (storageError) throw storageError
+
       setPresentation(data.presentation)
       onUploadSuccess(data.presentation)
       toast.success(`Tải lên thành công: ${data.presentation.slideCount} slide`)
@@ -79,7 +100,7 @@ export function PresentationUpload({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pptx"
+            accept=".ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
             hidden
             onChange={(e) => {
               const file = e.target.files?.[0]
@@ -93,7 +114,7 @@ export function PresentationUpload({
           <p className="text-sm font-medium text-foreground">
             {isLoading ? "Đang tải lên..." : "Kéo file PowerPoint vào đây hoặc click để chọn"}
           </p>
-          <p className="text-xs text-muted-foreground mt-1">Chỉ hỗ trợ .pptx</p>
+          <p className="text-xs text-muted-foreground mt-1">Hỗ trợ .ppt và .pptx, tối đa 50 MB</p>
         </div>
       ) : (
         <div className="bg-muted/50 rounded-lg p-4 flex items-center justify-between">
