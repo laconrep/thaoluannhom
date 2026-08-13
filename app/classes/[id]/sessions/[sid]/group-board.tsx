@@ -113,6 +113,7 @@ export function GroupSessionBoard({
   const [slideshowIdx, setSlideshowIdx] = useState<number | null>(null) // chế độ trình chiếu cả lớp
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [soundOn, setSoundOn] = useState(false)
+  const [projectionTimerStarted, setProjectionTimerStarted] = useState(false)
   const [liveMap, setLiveMap] = useState<Record<string, number>>({}) // groupId -> timestamp khi có update
   const [presentation, setPresentation] = useState<any>(null) // Presentation loaded
   const [isTeacher, setIsTeacher] = useState(false)
@@ -121,8 +122,13 @@ export function GroupSessionBoard({
   useEffect(() => {
     setSoundOn(isSoundEnabled())
     const openGroupFromProjection = (event: Event) => setOpenGroupId((event as CustomEvent<string>).detail)
+    const startProjectionTimer = () => setProjectionTimerStarted(true)
     window.addEventListener("presentation-open-group", openGroupFromProjection)
-    return () => window.removeEventListener("presentation-open-group", openGroupFromProjection)
+    window.addEventListener("presentation-started", startProjectionTimer)
+    return () => {
+      window.removeEventListener("presentation-open-group", openGroupFromProjection)
+      window.removeEventListener("presentation-started", startProjectionTimer)
+    }
   }, [])
 
   // Check if user is teacher
@@ -373,6 +379,7 @@ export function GroupSessionBoard({
                 status={session.status}
                 endsAt={session.ends_at}
                 durationSeconds={session.duration_seconds}
+                forceStart={projectionTimerStarted}
               />
 
               <div className="grid grid-cols-2 gap-1.5 mt-1">
@@ -402,10 +409,12 @@ export function GroupSessionBoard({
                   <p className="text-xs font-semibold text-muted-foreground mb-0.5">
                     PowerPoint
                   </p>
-                  <PresentationUpload
-                    sessionId={session.id}
-                    onUploadSuccess={(pres) => setPresentation(pres)}
-                  />
+                  <div className="presentation-upload">
+                    <PresentationUpload
+                      sessionId={session.id}
+                      onUploadSuccess={(pres) => setPresentation(pres)}
+                    />
+                  </div>
                 </>
               )}
 
