@@ -33,7 +33,7 @@ export function PresentationViewer({ presentationId, sessionId, isTeacher, child
       if (signed?.signedUrl) setSourceUrl(`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(signed.signedUrl)}`)
     }
     load()
-  }, [presentationId, supabase])
+  }, [isTeacher, presentationId, supabase])
 
   useEffect(() => {
     return () => {
@@ -63,7 +63,7 @@ export function PresentationViewer({ presentationId, sessionId, isTeacher, child
         if (!isTeacher) setActive(Boolean(payload.new?.is_visible))
       }).subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [active, presentation, presentationId, supabase])
+  }, [active, isTeacher, presentation, presentationId, supabase])
 
   const orderedGroups = Array.from({ length: Math.max(groupCount, 8) }, (_, i) => i + 1)
   const hasSubmission = (number: number) => {
@@ -105,10 +105,12 @@ export function PresentationViewer({ presentationId, sessionId, isTeacher, child
           />
           <div className={`fixed inset-y-0 left-0 z-[95] w-[min(340px,82vw)] bg-background text-foreground shadow-2xl transition-transform duration-300 ${drawerOpen ? "translate-x-0" : "-translate-x-full"}`}>
             <div className="flex items-center justify-between border-b p-3"><strong>Giao việc cho nhóm</strong><button onClick={() => { setDrawerOpen(false); setHoverTimer(null) }} aria-label="Thu gọn bảng nhóm" className="rounded p-1 hover:bg-muted"><ChevronRight className="size-5" /></button></div>
-            <div className="grid grid-cols-2 gap-2 p-3">{orderedGroups.map((number) => <button key={number} onClick={() => openGroup(number)} className="rounded border p-3 text-left hover:border-primary"><span className="font-semibold">Nhóm {number}</span><span className="block text-xs text-muted-foreground">{hasSubmission(number) ? "Đã nộp bài" : "Chưa nộp bài"}</span></button>)}</div>
+            <div data-projection-discussion-panel className="h-[calc(100%-57px)] overflow-auto bg-background p-3 [&_.presentation-upload]:hidden">
+              {children}
+            </div>
           </div>
-          <div className="absolute inset-y-0 left-0 flex w-[3.333vw] flex-col justify-center gap-1 py-8">{orderedGroups.slice(0, 4).map((number) => hasSubmission(number) && <button key={number} onClick={() => openGroup(number)} className="h-[5vh] w-full rounded-r bg-primary text-primary-foreground text-[10px]">{number}</button>)}</div>
-          <div className="absolute inset-y-0 right-0 flex w-[3.333vw] flex-col justify-center gap-1 py-8">{orderedGroups.slice(4, 8).map((number) => hasSubmission(number) && <button key={number} onClick={() => openGroup(number)} className="h-[5vh] w-full rounded-l bg-primary text-primary-foreground text-[10px]">{number}</button>)}</div>
+          <div className={`fixed inset-y-0 left-0 z-[88] flex w-[2.5vw] flex-col justify-center gap-1 py-8 transition-opacity ${drawerOpen ? "pointer-events-none opacity-0" : "opacity-100"}`}>{orderedGroups.slice(0, 4).map((number) => hasSubmission(number) && <button key={number} onClick={() => openGroup(number)} className="h-[3.333vh] w-full rounded-r bg-primary text-primary-foreground text-[10px]">{number}</button>)}</div>
+          <div className={`fixed inset-y-0 right-0 z-[88] flex w-[2.5vw] flex-col justify-center gap-1 py-8 transition-opacity ${drawerOpen ? "pointer-events-none opacity-0" : "opacity-100"}`}>{orderedGroups.slice(4, 8).map((number) => hasSubmission(number) && <button key={number} onClick={() => openGroup(number)} className="h-[3.333vh] w-full rounded-l bg-primary text-primary-foreground text-[10px]">{number}</button>)}</div>
           <button onClick={stopPresentation} aria-label="Đóng trình chiếu" className="absolute right-3 top-3 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"><X className="size-4" /></button>
         </>
       )}

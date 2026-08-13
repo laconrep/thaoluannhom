@@ -402,10 +402,12 @@ export function GroupSessionBoard({
                   <p className="text-xs font-semibold text-muted-foreground mb-0.5">
                     PowerPoint
                   </p>
-                  <PresentationUpload
-                    sessionId={session.id}
-                    onUploadSuccess={(pres) => setPresentation(pres)}
-                  />
+                  <div className="presentation-upload">
+                    <PresentationUpload
+                      sessionId={session.id}
+                      onUploadSuccess={(pres) => setPresentation(pres)}
+                    />
+                  </div>
                 </>
               )}
 
