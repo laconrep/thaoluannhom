@@ -30,7 +30,6 @@ export const metadata: Metadata = {
   title: "Lớp học thảo luận — Báo cáo nhóm trực tuyến",
   description:
     "Ứng dụng thảo luận nhóm và chấm bài trực tiếp dành cho giáo viên THPT. Tạo phiên nhóm/cá nhân, HS nộp ảnh/file, GV sửa bài sống ngay trên lớp.",
-  generator: "v0.app",
   icons: {
     icon: [
       { url: "/icon-light-32x32.png", media: "(prefers-color-scheme: light)" },

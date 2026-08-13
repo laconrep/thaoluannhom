@@ -4,6 +4,33 @@ import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
 import { colorForIndex } from "@/lib/group-colors"
+import { PLAN_DEFAULT, planLimits, type Plan } from "@/lib/plans"
+
+/* ============ PLANS / QUOTA ============ */
+
+async function getPlan(supabase: Awaited<ReturnType<typeof createClient>>, userId: string): Promise<Plan> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("plan")
+    .eq("id", userId)
+    .maybeSingle()
+  const plan = data?.plan as Plan | undefined
+  if (plan === "free" || plan === "pro" || plan === "school") return plan
+  return PLAN_DEFAULT
+}
+
+export async function upgradeToPlanAction(plan: Plan) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) redirect("/auth/login")
+  const { error } = await supabase
+    .from("profiles")
+    .upsert({ id: user.id, plan, updated_at: new Date().toISOString() }, { onConflict: "id" })
+  if (error) throw new Error(error.message)
+  revalidatePath("/pricing")
+}
 
 /* ============ CLASSES ============ */
 
@@ -17,6 +44,19 @@ export async function createClassAction(formData: FormData) {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) redirect("/auth/login")
+
+  // Kiểm tra quota theo gói
+  const plan = await getPlan(supabase, user.id)
+  const limits = planLimits(plan)
+  const { count } = await supabase
+    .from("classes")
+    .select("id", { count: "exact", head: true })
+    .eq("teacher_id", user.id)
+  if (count !== null && count >= limits.maxClasses) {
+    throw new Error(
+      `Gói ${plan} giới hạn ${limits.maxClasses} lớp. Hãy nâng cấp gói hoặc xóa bớt lớp cũ.`,
+    )
+  }
 
   const { data: cls, error } = await supabase
     .from("classes")
@@ -106,6 +146,76 @@ export async function bulkSetNamesAction(classId: string, names: string[]) {
     await supabase.from("students").update({ name }).eq("id", students[i].id)
   }
   revalidatePath(`/classes/${classId}/roster`)
+}
+
+export async function importStudentsFromListAction(
+  classId: string,
+  names: string[],
+): Promise<{ ok: boolean; added?: number; error?: string }> {
+  const supabase = await createClient()
+  const clean = names
+    .map((n) => (typeof n === "string" ? n.trim() : ""))
+    .filter((n) => n.length > 0)
+  if (clean.length === 0) return { ok: false, error: "Danh sách không có tên nào." }
+  if (clean.length > 200) return { ok: false, error: "Tối đa 200 học sinh cho một lần nhập." }
+
+  const [{ data: cls }, { data: students }] = await Promise.all([
+    supabase.from("classes").select("capacity").eq("id", classId).single(),
+    supabase
+      .from("students")
+      .select("id, slot_number, name")
+      .eq("class_id", classId)
+      .order("slot_number"),
+  ])
+  if (!cls || !students) return { ok: false, error: "Không tìm thấy lớp." }
+
+  // Kiểm tra sĩ số theo gói khi import số đông
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user) {
+    const plan = await getPlan(supabase, user.id)
+    const limit = planLimits(plan).maxStudentsPerClass
+    if (clean.length > limit) {
+      return {
+        ok: false,
+        error: `Gói ${plan} cho phép tối đa ${limit} học sinh/lớp. Hãy nâng cấp gói hoặc giảm số học sinh nhập vào.`,
+      }
+    }
+  }
+
+  // Nếu cần thêm chỗ trống, mở rộng sĩ số lên đúng số tên nhập vào
+  let capacity = cls.capacity
+  if (clean.length > capacity) {
+    capacity = clean.length
+    const extra = Array.from({ length: capacity - cls.capacity }, (_, i) => ({
+      class_id: classId,
+      slot_number: cls.capacity + i + 1,
+      name: null,
+    }))
+    await supabase.from("students").insert(extra)
+    await supabase.from("classes").update({ capacity }).eq("id", classId)
+    // Đưa các ô mới vào danh sách để cập nhật tên
+    const { data: extraRows } = await supabase
+      .from("students")
+      .select("id, slot_number, name")
+      .eq("class_id", classId)
+      .order("slot_number")
+    if (extraRows) students.push(...extraRows)
+  }
+
+  const slotToStudent = new Map<number, { id: string; name: string | null }>()
+  for (const s of students) slotToStudent.set(s.slot_number, s)
+
+  for (let i = 0; i < clean.length; i++) {
+    const row = slotToStudent.get(i + 1)
+    if (!row) continue
+    if ((row.name ?? "").trim() !== clean[i]) {
+      await supabase.from("students").update({ name: clean[i] }).eq("id", row.id)
+    }
+  }
+  revalidatePath(`/classes/${classId}/roster`)
+  return { ok: true, added: clean.length }
 }
 
 export async function setCapacityAction(classId: string, newCapacity: number) {
@@ -419,6 +529,29 @@ export async function toggleShareScoresAction(classId: string, shared: boolean) 
 
 /* ============ ANNOTATIONS & SUBMISSIONS (teacher) ============ */
 
+// Ghi lịch sử thay đổi điểm (audit trail)
+async function logScoreHistory(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  sessionId: string,
+  studentId: string,
+  scoreOld: number | null,
+  scoreNew: number | null,
+  source: "annotation" | "override" | "gradebook",
+) {
+  if (scoreOld === scoreNew) return
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  await supabase.from("score_history").insert({
+    session_id: sessionId,
+    student_id: studentId,
+    actor_id: user?.id ?? null,
+    source,
+    score_old: scoreOld,
+    score_new: scoreNew,
+  })
+}
+
 export async function saveAnnotationAction(args: {
   sessionId: string
   sessionGroupId?: string | null
@@ -481,7 +614,7 @@ export async function saveAnnotationAction(args: {
       for (const studentId of studentIds) {
         const { data: existed } = await supabase
           .from("student_scores")
-          .select("id")
+          .select("id, score")
           .eq("session_id", sg.session_id)
           .eq("student_id", studentId)
           .maybeSingle()
@@ -502,6 +635,14 @@ export async function saveAnnotationAction(args: {
             group_name: sg.label,
           })
         }
+        await logScoreHistory(
+          supabase,
+          sg.session_id,
+          studentId,
+          existed?.score ?? null,
+          args.score,
+          "annotation",
+        )
       }
     }
   }
@@ -515,7 +656,7 @@ export async function saveAnnotationAction(args: {
     if (ss?.student_id) {
       const { data: existed } = await supabase
         .from("student_scores")
-        .select("id")
+        .select("id, score")
         .eq("session_id", ss.session_id)
         .eq("student_id", ss.student_id)
         .maybeSingle()
@@ -531,6 +672,14 @@ export async function saveAnnotationAction(args: {
           score: args.score,
         })
       }
+      await logScoreHistory(
+        supabase,
+        ss.session_id,
+        ss.student_id,
+        existed?.score ?? null,
+        args.score,
+        "annotation",
+      )
     }
   }
 }
@@ -543,7 +692,7 @@ export async function overrideStudentScoreAction(
   const supabase = await createClient()
   const { data: existed } = await supabase
     .from("student_scores")
-    .select("id")
+    .select("id, score")
     .eq("session_id", sessionId)
     .eq("student_id", studentId)
     .maybeSingle()
@@ -559,6 +708,7 @@ export async function overrideStudentScoreAction(
       score,
     })
   }
+  await logScoreHistory(supabase, sessionId, studentId, existed?.score ?? null, score, "override")
 }
 
 /* ============ STUDENT SIDE ============ */

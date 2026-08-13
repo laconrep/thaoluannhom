@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { GraduationCap, LayoutDashboard } from "lucide-react"
+import { GraduationCap, LayoutDashboard, CreditCard } from "lucide-react"
 import { signOutAction } from "@/app/actions"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -26,6 +26,12 @@ export function TeacherShell({
             <Link href="/dashboard" className="gap-2">
               <LayoutDashboard className="size-4" aria-hidden="true" />
               Lớp của tôi
+            </Link>
+          </Button>
+          <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
+            <Link href="/pricing" className="gap-2">
+              <CreditCard className="size-4" aria-hidden="true" />
+              Gói sử dụng
             </Link>
           </Button>
           <div className="ml-auto flex items-center gap-1.5">
