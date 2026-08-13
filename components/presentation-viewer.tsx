@@ -36,6 +36,12 @@ export function PresentationViewer({ presentationId, sessionId, isTeacher, child
   }, [presentationId, supabase])
 
   useEffect(() => {
+    return () => {
+      if (hoverTimer) clearTimeout(hoverTimer)
+    }
+  }, [hoverTimer])
+
+  useEffect(() => {
     const start = () => setActive(true)
     const openGroup = (event: Event) => {
       const id = (event as CustomEvent<string>).detail
@@ -86,9 +92,19 @@ export function PresentationViewer({ presentationId, sessionId, isTeacher, child
       {sourceUrl ? <iframe title={presentation.file_name} src={sourceUrl} className="absolute inset-0 h-full w-full border-0" allowFullScreen /> : <div className="grid h-full place-items-center">Đang mở PowerPoint…</div>}
       {isTeacher && (
         <>
-          <div className="absolute left-0 top-0 bottom-0 w-3" onMouseEnter={() => setHoverTimer(setTimeout(() => setDrawerOpen(true), 2000))} onMouseLeave={() => { if (hoverTimer) clearTimeout(hoverTimer) }} />
-          <div className={`absolute left-0 top-0 bottom-0 w-[min(340px,82vw)] bg-background text-foreground shadow-2xl transition-transform duration-300 ${drawerOpen ? "translate-x-0" : "-translate-x-full"}`}>
-            <div className="flex items-center justify-between border-b p-3"><strong>Giao việc cho nhóm</strong><button onClick={() => setDrawerOpen(false)} aria-label="Thu gọn bảng nhóm" className="rounded p-1 hover:bg-muted"><ChevronRight className="size-5" /></button></div>
+          <div
+            className="fixed inset-y-0 left-0 z-[90] w-8 cursor-e-resize"
+            onMouseEnter={() => {
+              if (hoverTimer) clearTimeout(hoverTimer)
+              setHoverTimer(setTimeout(() => setDrawerOpen(true), 2000))
+            }}
+            onMouseLeave={() => {
+              if (hoverTimer) clearTimeout(hoverTimer)
+              setHoverTimer(null)
+            }}
+          />
+          <div className={`fixed inset-y-0 left-0 z-[95] w-[min(340px,82vw)] bg-background text-foreground shadow-2xl transition-transform duration-300 ${drawerOpen ? "translate-x-0" : "-translate-x-full"}`}>
+            <div className="flex items-center justify-between border-b p-3"><strong>Giao việc cho nhóm</strong><button onClick={() => { setDrawerOpen(false); setHoverTimer(null) }} aria-label="Thu gọn bảng nhóm" className="rounded p-1 hover:bg-muted"><ChevronRight className="size-5" /></button></div>
             <div className="grid grid-cols-2 gap-2 p-3">{orderedGroups.map((number) => <button key={number} onClick={() => openGroup(number)} className="rounded border p-3 text-left hover:border-primary"><span className="font-semibold">Nhóm {number}</span><span className="block text-xs text-muted-foreground">{hasSubmission(number) ? "Đã nộp bài" : "Chưa nộp bài"}</span></button>)}</div>
           </div>
           <div className="absolute inset-y-0 left-0 flex w-[3.333vw] flex-col justify-center gap-1 py-8">{orderedGroups.slice(0, 4).map((number) => hasSubmission(number) && <button key={number} onClick={() => openGroup(number)} className="h-[5vh] w-full rounded-r bg-primary text-primary-foreground text-[10px]">{number}</button>)}</div>
