@@ -429,7 +429,10 @@ export async function pauseSessionAction(sessionId: string) {
 
 export async function endSessionAction(sessionId: string) {
   const supabase = await createClient()
-  const { error } = await supabase.from("sessions").update({ status: "ended" }).eq("id", sessionId)
+  const { error } = await supabase
+    .from("sessions")
+    .update({ status: "ended", ends_at: null })
+    .eq("id", sessionId)
   if (error) throw new Error(error.message)
 }
 

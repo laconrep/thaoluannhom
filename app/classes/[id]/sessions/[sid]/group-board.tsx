@@ -27,6 +27,7 @@ import { Switch } from "@/components/ui/switch"
 import { sounds, isSoundEnabled, setSoundEnabled } from "@/lib/sounds"
 import { PresentationUpload } from "@/components/presentation-upload"
 import { PresentationViewer, startPresentationMode } from "@/components/presentation-viewer"
+import { QRCodeSVG } from "qrcode.react"
 import {
   ArrowLeft,
   Link as LinkIcon,
@@ -44,6 +45,7 @@ import {
   Sparkles,
   PanelLeftClose,
   PanelLeftOpen,
+  QrCode,
   X,
 } from "lucide-react"
 
@@ -71,6 +73,7 @@ export function GroupSessionBoard({
   const [openGroupId, setOpenGroupId] = useState<string | null>(null)
   const [slideshowIdx, setSlideshowIdx] = useState<number | null>(null) // chế độ trình chiếu cả lớp
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [showQr, setShowQr] = useState(false)
   const [soundOn, setSoundOn] = useState(false)
   const [liveMap, setLiveMap] = useState<Record<string, number>>({}) // groupId -> timestamp khi có update
   const [presentation, setPresentation] = useState<any>(null) // Presentation loaded
@@ -292,42 +295,49 @@ export function GroupSessionBoard({
           ? "grid-cols-3"
           : "grid-cols-4"
 
-  const mainContent = (
-    <div className="-mx-4 -my-5">
+  const renderBoard = (embedded: boolean, onOpenGroupId?: (id: string) => void) => {
+    const open = embedded || sidebarOpen
+    const handleOpen = (id: string) => (onOpenGroupId ? onOpenGroupId(id) : setOpenGroupId(id))
+    return (
+    <div className={embedded ? "h-full" : "-mx-4 -my-5"}>
       <div
-        className={`grid gap-3 h-[calc(100svh-160px)] px-4 transition-[grid-template-columns] duration-200`}
+        className={`grid gap-3 px-4 transition-[grid-template-columns] duration-200 ${
+          embedded ? "h-full" : "h-[calc(100svh-160px)]"
+        }`}
         style={{
-          gridTemplateColumns: sidebarOpen ? "260px 1fr" : "64px 1fr",
+          gridTemplateColumns: open ? "260px 1fr" : "64px 1fr",
         }}
       >
         {/* SIDEBAR */}
         <aside className="flex flex-col gap-2 border rounded-xl bg-card p-2 overflow-auto no-scrollbar">
-          <div className="flex items-center gap-1">
-            {sidebarOpen && (
-              <Link
-                href={`/classes/${classId}/sessions`}
-                className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1 mr-auto"
-              >
-                <ArrowLeft className="size-3" aria-hidden="true" />
-                Tất cả phiên
-              </Link>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              onClick={() => setSidebarOpen((v) => !v)}
-              aria-label={sidebarOpen ? "Thu gọn sidebar" : "Mở rộng sidebar"}
-            >
-              {sidebarOpen ? (
-                <PanelLeftClose className="size-4" />
-              ) : (
-                <PanelLeftOpen className="size-4" />
+          {!embedded && (
+            <div className="flex items-center gap-1">
+              {sidebarOpen && (
+                <Link
+                  href={`/classes/${classId}/sessions`}
+                  className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1 mr-auto"
+                >
+                  <ArrowLeft className="size-3" aria-hidden="true" />
+                  Tất cả phiên
+                </Link>
               )}
-            </Button>
-          </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                onClick={() => setSidebarOpen((v) => !v)}
+                aria-label={sidebarOpen ? "Thu gọn sidebar" : "Mở rộng sidebar"}
+              >
+                {sidebarOpen ? (
+                  <PanelLeftClose className="size-4" />
+                ) : (
+                  <PanelLeftOpen className="size-4" />
+                )}
+              </Button>
+            </div>
+          )}
 
-          {sidebarOpen ? (
+          {open ? (
             <>
               <h3 className="font-heading font-semibold text-sm leading-tight text-pretty line-clamp-2 mt-1">
                 {session.title}
@@ -357,13 +367,24 @@ export function GroupSessionBoard({
                 </div>
               </div>
 
-              <Button variant="outline" size="sm" onClick={copyShareLink} className="gap-1 mt-1">
-                <LinkIcon className="size-3" aria-hidden="true" />
-                Copy link HS làm bài
-              </Button>
+              <div className="flex gap-1 mt-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={copyShareLink}
+                  className="gap-1 flex-1"
+                >
+                  <LinkIcon className="size-3" aria-hidden="true" />
+                  Copy link HS làm bài
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setShowQr(true)} className="gap-1">
+                  <QrCode className="size-3" aria-hidden="true" />
+                  QR
+                </Button>
+              </div>
 
               {/* Presentation upload */}
-              {isTeacher && (
+              {isTeacher && !embedded && (
                 <>
                   <div className="h-px bg-border my-1" />
                   <p className="text-xs font-semibold text-muted-foreground mb-0.5">
@@ -377,16 +398,18 @@ export function GroupSessionBoard({
               )}
 
               {/* Chế độ chiếu lớp slideshow */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => presentation ? startPresentationMode() : setSlideshowIdx(0)}
-                className="gap-1"
-                disabled={groups.length === 0}
-              >
-                <Presentation className="size-3" aria-hidden="true" />
-                Chế độ chiếu lớp
-              </Button>
+              {!embedded && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => presentation ? startPresentationMode() : setSlideshowIdx(0)}
+                  className="gap-1"
+                  disabled={groups.length === 0}
+                >
+                  <Presentation className="size-3" aria-hidden="true" />
+                  Chế độ chiếu lớp
+                </Button>
+              )}
 
               {/* Chia sẻ kết quả cho HS */}
               <div className="rounded-md border bg-accent/10 border-accent/40 p-2 flex flex-col gap-1.5 mt-1">
@@ -464,7 +487,7 @@ export function GroupSessionBoard({
                   return (
                     <li key={g.id}>
                       <button
-                        onClick={() => setOpenGroupId(g.id)}
+                        onClick={() => handleOpen(g.id)}
                         className="w-full text-left rounded-md border bg-card hover:bg-muted/40 hover:border-primary/30 p-1.5 flex flex-col gap-0.5 transition"
                       >
                         <div className="flex items-center gap-1.5">
@@ -540,7 +563,7 @@ export function GroupSessionBoard({
               subsByGroup={subsByGroup}
               annsByGroup={annsByGroup}
               liveMap={liveMap}
-              onOpen={(id) => setOpenGroupId(id)}
+              onOpen={handleOpen}
               onUnlock={(g) => {
                 if (
                   !confirm(
@@ -551,14 +574,19 @@ export function GroupSessionBoard({
                 unlockGroupAction(g.id, true)
                 toast("Đã mở lại " + g.label)
               }}
-              onMaximize={(idx) => setSlideshowIdx(idx)}
+              onMaximize={embedded ? undefined : (idx) => setSlideshowIdx(idx)}
               colsClass={colsClass}
             />
           </div>
         </div>
       </div>
+    </div>
+    )
+  }
 
-      {/* Editor modal */}
+  const mainContent = (
+    <>
+      {renderBoard(false)}
       {openGroup && (
         <AnnotationEditor
           title={`${openGroup.label} — ${session.title}`}
@@ -578,8 +606,6 @@ export function GroupSessionBoard({
           onClose={() => setOpenGroupId(null)}
         />
       )}
-
-      {/* Slideshow presentation mode */}
       {slideshowGroup && (
         <Slideshow
           group={slideshowGroup}
@@ -596,33 +622,72 @@ export function GroupSessionBoard({
           onClose={() => setSlideshowIdx(null)}
         />
       )}
+    </>
+  )
+
+  // QR modal cho link HS nộp bài
+  const qrModal = showQr && (
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/60" onClick={() => setShowQr(false)}>
+      <div
+        className="bg-white text-foreground rounded-xl p-5 flex flex-col items-center gap-3 max-w-[90vw]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="font-heading font-semibold">Quét QR để HS mở link nộp bài</p>
+        <QRCodeSVG value={`${window.location.origin}/c/${shareToken}/session/${session.id}`} size={220} />
+        <p className="text-xs text-muted-foreground break-all text-center max-w-[280px]">
+          {`${window.location.origin}/c/${shareToken}/session/${session.id}`}
+        </p>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" className="gap-1" onClick={copyShareLink}>
+            <LinkIcon className="size-3.5" />
+            Copy link
+          </Button>
+          <Button size="sm" onClick={() => setShowQr(false)}>
+            Đóng
+          </Button>
+        </div>
+      </div>
     </div>
   )
 
   // If presentation is loaded and teacher, wrap in PresentationViewer
   if (presentation && isTeacher) {
     return (
-      <PresentationViewer
-        presentationId={presentation.id}
-        sessionId={session.id}
-        isTeacher={isTeacher}
-        groupCount={groups.length}
-        groups={groups}
-        submissions={subs}
-        annotations={anns}
-        shareLink={`${window.location.origin}/c/${shareToken}/session/${session.id}`}
-        liveMap={liveMap}
-        status={session.status}
-        endsAt={session.ends_at}
-        durationSeconds={session.duration_seconds}
-        forceStart={projectionTimerStarted}
-      >
-        {mainContent}
-      </PresentationViewer>
+      <>
+        <PresentationViewer
+          presentationId={presentation.id}
+          sessionId={session.id}
+          isTeacher={isTeacher}
+          groupCount={groups.length}
+          groups={groups}
+          submissions={subs}
+          annotations={anns}
+          shareLink={`${window.location.origin}/c/${shareToken}/session/${session.id}`}
+          liveMap={liveMap}
+          status={session.status}
+          endsAt={session.ends_at}
+          durationSeconds={session.duration_seconds}
+          forceStart={projectionTimerStarted}
+          board={(openGroup) =>
+            renderBoard(true, (id) => {
+              const g = groups.find((x) => x.id === id)
+              if (g) openGroup(g.group_number)
+            })
+          }
+        >
+          {mainContent}
+        </PresentationViewer>
+        {qrModal}
+      </>
     )
   }
 
-  return mainContent
+  return (
+    <>
+      {mainContent}
+      {qrModal}
+    </>
+  )
 }
 
 function Slideshow({
