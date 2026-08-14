@@ -8,7 +8,9 @@ import { toast } from "sonner"
 import { QRCodeSVG } from "qrcode.react"
 import { AnnotationEditor } from "@/components/annotation-editor"
 import { GroupCardsGrid } from "@/components/group-card"
+import { TimerPanel } from "@/components/timer-panel"
 import { getFiles } from "@/lib/submission-files"
+import { useCountdown, formatClock } from "@/lib/use-countdown"
 import { saveAnnotationAction } from "@/app/actions"
 import type { AnnotationItem, AnnotationRow, SubmissionRow } from "@/lib/types"
 
@@ -23,6 +25,10 @@ export interface PresentationViewerProps {
   annotations?: any[]
   shareLink?: string
   liveMap?: Record<string, number>
+  status?: "idle" | "running" | "ended"
+  endsAt?: string | null
+  durationSeconds?: number
+  forceStart?: boolean
 }
 
 function colsFor(count: number): string {
@@ -42,6 +48,10 @@ export function PresentationViewer({
   annotations = [],
   shareLink = "",
   liveMap = {},
+  status = "idle",
+  endsAt = null,
+  durationSeconds = 600,
+  forceStart = false,
 }: PresentationViewerProps) {
   const [presentation, setPresentation] = useState<any>(null)
   const [active, setActive] = useState(false)
@@ -133,6 +143,8 @@ export function PresentationViewer({
     return m
   }, [submissions])
 
+  const sessionLeft = useCountdown(status === "running" ? endsAt : null, status)
+
   const annsByGroup = useMemo(() => {
     const m: Record<string, AnnotationRow> = {}
     for (const a of annotations) if (a.session_group_id) m[a.session_group_id] = a
@@ -214,6 +226,17 @@ export function PresentationViewer({
           {String(remainingSeconds % 60).padStart(2, "0")}
         </div>
       )}
+
+      {/* Đồng hồ phiên nổi góc phải */}
+      {status === "running" && (
+        <div
+          className="absolute right-4 top-16 z-30 flex items-center justify-center rounded-full border-4 border-green-500 bg-transparent font-mono text-red-500 font-bold tabular-nums"
+          style={{ width: "min(5vw, 5vh)", height: "min(5vw, 5vh)", fontSize: "min(1.4vw, 1.4vh)" }}
+          title="Thời gian còn lại của phiên thảo luận"
+        >
+          {formatClock(sessionLeft)}
+        </div>
+      )}
       {sourceUrl ? (
         <iframe
           title={presentation.file_name}
@@ -267,6 +290,15 @@ export function PresentationViewer({
                 <ChevronRight className="size-5" />
               </button>
             </div>
+            <div className="p-3 pb-0">
+              <TimerPanel
+                sessionId={sessionId}
+                status={status}
+                endsAt={endsAt}
+                durationSeconds={durationSeconds}
+                forceStart={forceStart}
+              />
+            </div>
             <div className="flex-1 overflow-auto p-3">
               <GroupCardsGrid
                 groups={groups}
@@ -310,43 +342,55 @@ export function PresentationViewer({
             </div>
           )}
 
-          {/* Thanh nộp bài bên trái (nhóm 1-4) */}
-          <div className="absolute inset-y-0 left-6 z-20 flex w-[3.333vw] flex-col justify-center gap-1 py-8">
-            {orderedGroups
-              .slice(0, 4)
-              .map(
-                (number) =>
-                  hasSubmission(number) && (
-                    <button
-                      key={number}
-                      onClick={() => openGroup(number)}
-                      title={`Nhóm ${number} - Đã nộp`}
-                      className="h-[5vh] w-full rounded-r bg-primary text-primary-foreground text-[10px]"
-                    >
-                      {number}
-                    </button>
-                  ),
-              )}
-          </div>
+          {/* Thanh nhóm bên trái (nhóm 1-4) */}
+          {status !== "ended" && (
+            <div className="absolute inset-y-0 left-6 z-20 flex w-[2.5vw] flex-col justify-center gap-1 py-8">
+              {orderedGroups.slice(0, 4).map((number) => {
+                const group = groups.find((item) => item.group_number === number)
+                const label = group?.label ?? `Nhóm ${number}`
+                const submitted = hasSubmission(number)
+                return (
+                  <button
+                    key={number}
+                    onClick={() => openGroup(number)}
+                    title={`${label}${submitted ? " - Đã nộp" : " - Chưa nộp"}`}
+                    className={`h-[3.333vh] w-full rounded-r text-[8px] leading-[1.1] break-words text-center transition-colors ${
+                      submitted
+                        ? "bg-primary text-primary-foreground font-bold"
+                        : "bg-white/15 text-white/80 border border-white/20 hover:bg-white/25"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
 
-          {/* Thanh nộp bài bên phải (nhóm 5-8) */}
-          <div className="absolute inset-y-0 right-0 z-20 flex w-[3.333vw] flex-col justify-center gap-1 py-8">
-            {orderedGroups
-              .slice(4, 8)
-              .map(
-                (number) =>
-                  hasSubmission(number) && (
-                    <button
-                      key={number}
-                      onClick={() => openGroup(number)}
-                      title={`Nhóm ${number} - Đã nộp`}
-                      className="h-[5vh] w-full rounded-l bg-primary text-primary-foreground text-[10px]"
-                    >
-                      {number}
-                    </button>
-                  ),
-              )}
-          </div>
+          {/* Thanh nhóm bên phải (nhóm 5-8) */}
+          {status !== "ended" && (
+            <div className="absolute inset-y-0 right-0 z-20 flex w-[2.5vw] flex-col justify-center gap-1 py-8">
+              {orderedGroups.slice(4, 8).map((number) => {
+                const group = groups.find((item) => item.group_number === number)
+                const label = group?.label ?? `Nhóm ${number}`
+                const submitted = hasSubmission(number)
+                return (
+                  <button
+                    key={number}
+                    onClick={() => openGroup(number)}
+                    title={`${label}${submitted ? " - Đã nộp" : " - Chưa nộp"}`}
+                    className={`h-[3.333vh] w-full rounded-l text-[8px] leading-[1.1] break-words text-center transition-colors ${
+                      submitted
+                        ? "bg-primary text-primary-foreground font-bold"
+                        : "bg-white/15 text-white/80 border border-white/20 hover:bg-white/25"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
 
           {/* Nút đóng trình chiếu */}
           <button

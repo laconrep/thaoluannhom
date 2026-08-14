@@ -612,6 +612,10 @@ export function GroupSessionBoard({
         annotations={anns}
         shareLink={`${window.location.origin}/c/${shareToken}/session/${session.id}`}
         liveMap={liveMap}
+        status={session.status}
+        endsAt={session.ends_at}
+        durationSeconds={session.duration_seconds}
+        forceStart={projectionTimerStarted}
       >
         {mainContent}
       </PresentationViewer>
