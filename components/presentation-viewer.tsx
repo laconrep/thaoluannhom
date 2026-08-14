@@ -50,6 +50,7 @@ export function PresentationViewer({
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
   const [rawUrl, setRawUrl] = useState<string | null>(null)
   const [openGroupId, setOpenGroupId] = useState<string | null>(null)
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null)
   const [hoverTimer, setHoverTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
   const supabase = useMemo(() => createClient(), [])
 
@@ -63,6 +64,9 @@ export function PresentationViewer({
         .single()
       if (!data) return
       setPresentation(data)
+      setRemainingSeconds(
+        data.ends_at ? Math.max(0, Math.ceil((new Date(data.ends_at).getTime() - Date.now()) / 1000)) : null,
+      )
       if (!isTeacher) setActive(Boolean(data.is_visible))
       const { data: signed } = await supabase.storage
         .from("presentations")
@@ -92,6 +96,11 @@ export function PresentationViewer({
         (payload: any) => {
           setPresentation(payload.new)
           if (!isTeacher) setActive(Boolean(payload.new?.is_visible))
+          setRemainingSeconds(
+            payload.new?.ends_at
+              ? Math.max(0, Math.ceil((new Date(payload.new.ends_at).getTime() - Date.now()) / 1000))
+              : null,
+          )
         },
       )
       .subscribe()
@@ -99,6 +108,17 @@ export function PresentationViewer({
       supabase.removeChannel(channel)
     }
   }, [presentationId, supabase, isTeacher])
+
+  useEffect(() => {
+    if (!active || !presentation?.ends_at) return
+    const tick = () =>
+      setRemainingSeconds(
+        Math.max(0, Math.ceil((new Date(presentation.ends_at).getTime() - Date.now()) / 1000)),
+      )
+    tick()
+    const interval = window.setInterval(tick, 1000)
+    return () => window.clearInterval(interval)
+  }, [active, presentation?.ends_at])
 
   useEffect(() => {
     const start = () => startPresentation()
@@ -129,6 +149,7 @@ export function PresentationViewer({
     setActive(true)
     const p = document.documentElement.requestFullscreen?.()
     if (p) p.catch(() => undefined)
+    window.dispatchEvent(new Event("presentation-started"))
     supabase
       .from("presentations")
       .update({ is_visible: true })
@@ -187,6 +208,12 @@ export function PresentationViewer({
 
   return (
     <div className="fixed inset-0 z-[70] bg-black text-white">
+      {remainingSeconds !== null && (
+        <div className="absolute left-1/2 top-3 z-30 -translate-x-1/2 rounded-md bg-black/75 px-4 py-2 font-mono text-xl tabular-nums">
+          {String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:
+          {String(remainingSeconds % 60).padStart(2, "0")}
+        </div>
+      )}
       {sourceUrl ? (
         <iframe
           title={presentation.file_name}
@@ -376,4 +403,5 @@ export function PresentationViewer({
 
 export function startPresentationMode() {
   window.dispatchEvent(new Event("presentation-start"))
+  document.documentElement.requestFullscreen?.().catch(() => undefined)
 }

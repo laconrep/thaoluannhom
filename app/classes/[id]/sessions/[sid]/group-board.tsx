@@ -75,10 +75,20 @@ export function GroupSessionBoard({
   const [liveMap, setLiveMap] = useState<Record<string, number>>({}) // groupId -> timestamp khi có update
   const [presentation, setPresentation] = useState<any>(null) // Presentation loaded
   const [isTeacher, setIsTeacher] = useState(false)
+  const [projectionTimerStarted, setProjectionTimerStarted] = useState(false)
   const initRef = useRef(true)
 
   useEffect(() => {
     setSoundOn(isSoundEnabled())
+  }, [])
+
+  // Khi bắt đầu trình chiếu PowerPoint thì đồng bộ đồng hồ ở sidebar
+  useEffect(() => {
+    const startProjectionTimer = () => setProjectionTimerStarted(true)
+    window.addEventListener("presentation-started", startProjectionTimer)
+    return () => {
+      window.removeEventListener("presentation-started", startProjectionTimer)
+    }
   }, [])
 
   // Check if user is teacher
@@ -329,6 +339,7 @@ export function GroupSessionBoard({
                 status={session.status}
                 endsAt={session.ends_at}
                 durationSeconds={session.duration_seconds}
+                forceStart={projectionTimerStarted}
               />
 
               <div className="grid grid-cols-2 gap-1.5 mt-1">

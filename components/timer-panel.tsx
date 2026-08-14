@@ -21,11 +21,13 @@ export function TimerPanel({
   status,
   endsAt,
   durationSeconds,
+  forceStart = false,
 }: {
   sessionId: string
   status: Status
   endsAt: string | null
   durationSeconds: number
+  forceStart?: boolean
 }) {
   const [minutes, setMinutes] = useState<number>(() => Math.floor(durationSeconds / 60))
   const [seconds, setSeconds] = useState<number>(() => durationSeconds % 60)
@@ -33,6 +35,7 @@ export function TimerPanel({
   const [reopenMin, setReopenMin] = useState(5)
   const [reopenSec, setReopenSec] = useState(0)
   const [, startTransition] = useTransition()
+  const [forcedStartHandled, setForcedStartHandled] = useState(false)
 
   const left = useCountdown(endsAt, status)
 
@@ -85,6 +88,14 @@ export function TimerPanel({
       startSessionAction(sessionId, dur)
     })
   }
+  useEffect(() => {
+    if (forceStart && status === "idle" && !forcedStartHandled) {
+      setForcedStartHandled(true)
+      const duration = Math.max(5, minutes * 60 + seconds)
+      startTransition(() => { startSessionAction(sessionId, duration) })
+    }
+  }, [forceStart, forcedStartHandled, status, minutes, seconds, sessionId])
+
   function handlePause() {
     startTransition(() => {
       pauseSessionAction(sessionId)
