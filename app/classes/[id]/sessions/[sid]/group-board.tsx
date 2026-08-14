@@ -361,8 +361,8 @@ export function GroupSessionBoard({
 
   function handleSessionChanged(next: any) {
     if (!next) return
-    if (previewData) setPreviewData((p) => (p ? { ...p, session: next } : p))
-    else setSession(next)
+    if (previewData) setPreviewData((p) => (p ? { ...p, session: { ...p.session, ...next } } : p))
+    else setSession((s) => ({ ...s, ...next }))
   }
 
   function handleSessionPatch(patch: Partial<SessionRow>) {

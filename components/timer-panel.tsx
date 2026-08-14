@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Clock, Pause, Play, RotateCcw, StopCircle } from "lucide-react"
 import { useCountdown, formatClock } from "@/lib/use-countdown"
+import { toast } from "sonner"
 import {
   endSessionAction,
   pauseSessionAction,
@@ -50,19 +51,23 @@ export function TimerPanel({
   useEffect(() => {
     if (status !== "running" || !endsAt) return
     const ms = new Date(endsAt).getTime() - Date.now()
-    if (ms <= 0) {
+    const endOptimistic = { status: "ended", ends_at: null }
+    const doEnd = () => {
+      if (onChanged) onChanged(endOptimistic)
       startTransition(async () => {
-        const next = await endSessionAction(sessionId)
-        if (next) onChanged?.(next)
+        try {
+          const next = await endSessionAction(sessionId)
+          if (next) onChanged?.(next)
+        } catch (err) {
+          toast.error(`Không thể kết thúc phiên: ${(err as Error)?.message ?? "lỗi không xác định"}`)
+        }
       })
+    }
+    if (ms <= 0) {
+      doEnd()
       return
     }
-    const id = setTimeout(() => {
-      startTransition(async () => {
-        const next = await endSessionAction(sessionId)
-        if (next) onChanged?.(next)
-      })
-    }, ms + 300)
+    const id = setTimeout(doEnd, ms + 300)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, endsAt, sessionId])
@@ -84,43 +89,62 @@ export function TimerPanel({
 
   const isLow = status === "running" && left > 0 && left <= 15
 
+  function runAction(action: Promise<any>, optimistic: any, revert: any) {
+    if (onChanged) onChanged(optimistic)
+    startTransition(async () => {
+      try {
+        const next = await action
+        if (next) onChanged?.(next)
+      } catch (err) {
+        toast.error(`Không thể thực hiện: ${(err as Error)?.message ?? "lỗi không xác định"}`)
+        if (onChanged) onChanged(revert)
+      }
+    })
+  }
+
   function handleStart() {
     const dur = Math.max(5, minutes * 60 + seconds)
-    startTransition(async () => {
-      const next = await startSessionAction(sessionId, dur)
-      if (next) onChanged?.(next)
-    })
+    const now = new Date()
+    const optimistic = {
+      status: "running",
+      duration_seconds: dur,
+      started_at: now.toISOString(),
+      ends_at: new Date(now.getTime() + dur * 1000).toISOString(),
+    }
+    runAction(startSessionAction(sessionId, dur), optimistic, { status, ends_at: endsAt, duration_seconds: durationSeconds })
   }
   useEffect(() => {
     if (forceStart && status === "idle" && !forcedStartHandled) {
       setForcedStartHandled(true)
       const duration = Math.max(5, minutes * 60 + seconds)
-      startTransition(async () => {
-        const next = await startSessionAction(sessionId, duration)
-        if (next) onChanged?.(next)
-      })
+      const now = new Date()
+      const optimistic = {
+        status: "running",
+        duration_seconds: duration,
+        started_at: now.toISOString(),
+        ends_at: new Date(now.getTime() + duration * 1000).toISOString(),
+      }
+      runAction(startSessionAction(sessionId, duration), optimistic, { status, ends_at: endsAt, duration_seconds: durationSeconds })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forceStart, forcedStartHandled, status, minutes, seconds, sessionId])
 
   function handlePause() {
-    startTransition(async () => {
-      const next = await pauseSessionAction(sessionId)
-      if (next) onChanged?.(next)
-    })
+    runAction(pauseSessionAction(sessionId), { status: "idle", ends_at: null }, { status, ends_at: endsAt })
   }
   function handleEnd() {
-    startTransition(async () => {
-      const next = await endSessionAction(sessionId)
-      if (next) onChanged?.(next)
-    })
+    runAction(endSessionAction(sessionId), { status: "ended", ends_at: null }, { status, ends_at: endsAt })
   }
   function handleReopen() {
     const duration = Math.max(5, minutes * 60 + seconds)
-    startTransition(async () => {
-      const next = await reopenSessionAction(sessionId, duration)
-      if (next) onChanged?.(next)
-    })
+    const now = new Date()
+    const optimistic = {
+      status: "running",
+      duration_seconds: duration,
+      started_at: now.toISOString(),
+      ends_at: new Date(now.getTime() + duration * 1000).toISOString(),
+    }
+    runAction(reopenSessionAction(sessionId, duration), optimistic, { status, ends_at: endsAt, duration_seconds: durationSeconds })
   }
   function applyPreset(mins: number) {
     setMinutes(mins)
