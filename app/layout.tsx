@@ -1,30 +1,9 @@
 import type { Metadata, Viewport } from "next"
-import { Be_Vietnam_Pro, Lexend, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { Suspense } from "react"
 import { Toaster } from "@/components/ui/sonner"
 import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
-
-const beVietnamPro = Be_Vietnam_Pro({
-  subsets: ["latin", "vietnamese"],
-  weight: ["300", "400", "500", "600", "700"],
-  variable: "--font-be-vietnam-pro",
-  display: "swap",
-})
-
-const lexend = Lexend({
-  subsets: ["latin", "vietnamese"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-lexend",
-  display: "swap",
-})
-
-const geistMono = Geist_Mono({
-  subsets: ["latin"],
-  variable: "--font-geist-mono",
-  display: "swap",
-})
 
 export const metadata: Metadata = {
   title: "Lớp học thảo luận — Báo cáo nhóm trực tuyến",
@@ -58,7 +37,7 @@ export default function RootLayout({
     <html
       lang="vi"
       suppressHydrationWarning
-      className={`${beVietnamPro.variable} ${lexend.variable} ${geistMono.variable} bg-background`}
+      className="bg-background"
     >
       <body className="font-sans antialiased min-h-svh">
         <ThemeProvider

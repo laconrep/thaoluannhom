@@ -95,9 +95,9 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-be-vietnam-pro), 'Be Vietnam Pro Fallback', system-ui, sans-serif;
-  --font-heading: var(--font-lexend), 'Lexend Fallback', system-ui, sans-serif;
-  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-heading: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
