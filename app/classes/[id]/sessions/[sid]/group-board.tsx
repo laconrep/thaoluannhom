@@ -17,11 +17,11 @@ import type {
   SessionRow,
   SubmissionRow,
   AnnotationItem,
-  SubmissionFile,
 } from "@/lib/types"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
 import { AnnotationEditor } from "@/components/annotation-editor"
+import { GroupCardsGrid } from "@/components/group-card"
+import { getFiles } from "@/lib/submission-files"
 import { TimerPanel } from "@/components/timer-panel"
 import { Switch } from "@/components/ui/switch"
 import { sounds, isSoundEnabled, setSoundEnabled } from "@/lib/sounds"
@@ -32,9 +32,6 @@ import {
   Link as LinkIcon,
   CircleCheckBig,
   ClipboardList,
-  Image as ImageIcon,
-  FileText,
-  Unlock,
   Presentation,
   File as FileIcon,
   Share2,
@@ -44,49 +41,11 @@ import {
   VolumeX,
   Check,
   Download,
-  Maximize2,
   Sparkles,
   PanelLeftClose,
   PanelLeftOpen,
   X,
 } from "lucide-react"
-
-function getFiles(sub: SubmissionRow | undefined): SubmissionFile[] {
-  if (!sub) return []
-  if (Array.isArray(sub.files) && sub.files.length > 0) return sub.files
-  if (sub.image_url) {
-    return [
-      {
-        url: sub.image_url,
-        name: "ảnh.jpg",
-        kind: "image",
-        mime: "image/jpeg",
-        rotation: 0,
-      },
-    ]
-  }
-  return []
-}
-
-function FileThumb({ f }: { f: SubmissionFile }) {
-  if (f.kind === "image") {
-    return (
-      <img
-        src={f.url || "/placeholder.svg"}
-        alt={f.name}
-        className="w-full h-full object-cover"
-        style={{ transform: `rotate(${f.rotation ?? 0}deg)` }}
-      />
-    )
-  }
-  const Icon = f.kind === "pptx" ? Presentation : f.kind === "docx" ? FileText : FileIcon
-  return (
-    <div className="w-full h-full flex flex-col items-center justify-center gap-1 p-1 bg-muted/40 text-muted-foreground">
-      <Icon className="size-5" aria-hidden="true" />
-      <span className="text-[10px] line-clamp-2 text-center break-all px-1">{f.name}</span>
-    </div>
-  )
-}
 
 export function GroupSessionBoard({
   classId,
@@ -113,20 +72,21 @@ export function GroupSessionBoard({
   const [slideshowIdx, setSlideshowIdx] = useState<number | null>(null) // chế độ trình chiếu cả lớp
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [soundOn, setSoundOn] = useState(false)
-  const [projectionTimerStarted, setProjectionTimerStarted] = useState(false)
   const [liveMap, setLiveMap] = useState<Record<string, number>>({}) // groupId -> timestamp khi có update
   const [presentation, setPresentation] = useState<any>(null) // Presentation loaded
   const [isTeacher, setIsTeacher] = useState(false)
+  const [projectionTimerStarted, setProjectionTimerStarted] = useState(false)
   const initRef = useRef(true)
 
   useEffect(() => {
     setSoundOn(isSoundEnabled())
-    const openGroupFromProjection = (event: Event) => setOpenGroupId((event as CustomEvent<string>).detail)
+  }, [])
+
+  // Khi bắt đầu trình chiếu PowerPoint thì đồng bộ đồng hồ ở sidebar
+  useEffect(() => {
     const startProjectionTimer = () => setProjectionTimerStarted(true)
-    window.addEventListener("presentation-open-group", openGroupFromProjection)
     window.addEventListener("presentation-started", startProjectionTimer)
     return () => {
-      window.removeEventListener("presentation-open-group", openGroupFromProjection)
       window.removeEventListener("presentation-started", startProjectionTimer)
     }
   }, [])
@@ -409,12 +369,10 @@ export function GroupSessionBoard({
                   <p className="text-xs font-semibold text-muted-foreground mb-0.5">
                     PowerPoint
                   </p>
-                  <div className="presentation-upload">
-                    <PresentationUpload
-                      sessionId={session.id}
-                      onUploadSuccess={(pres) => setPresentation(pres)}
-                    />
-                  </div>
+                  <PresentationUpload
+                    sessionId={session.id}
+                    onUploadSuccess={(pres) => setPresentation(pres)}
+                  />
                 </>
               )}
 
@@ -576,112 +534,26 @@ export function GroupSessionBoard({
 
         {/* MAIN GRID */}
         <div className="overflow-auto">
-          <div className={`grid ${colsClass} gap-2.5 auto-rows-fr h-full`}>
-            {groups.map((g, idx) => {
-              const sub = subsByGroup[g.id]
-              const ann = annsByGroup[g.id]
-              const files = getFiles(sub)
-              const hasContent = files.length > 0 || !!sub?.text_content
-              const isLive = !!liveMap[g.id]
-              return (
-                <Card
-                  key={g.id}
-                  className="overflow-hidden hover:ring-2 hover:ring-primary/40 transition cursor-pointer flex flex-col float-card"
-                  onClick={() => setOpenGroupId(g.id)}
-                >
-                  <div className="border-b px-3 py-2 flex items-center justify-between gap-2 bg-card">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <p className="font-heading font-semibold text-sm truncate">{g.label}</p>
-                      {isLive && (
-                        <span
-                          className="size-2 rounded-full bg-primary animate-pulse shrink-0"
-                          aria-hidden="true"
-                          title="Đang hoạt động"
-                        />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {ann?.score !== null && ann?.score !== undefined && (
-                        <span className="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-bold">
-                          {ann.score} đ
-                        </span>
-                      )}
-                      {g.claimed && (
-                        <button
-                          type="button"
-                          title="Mở lại nhóm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (
-                              !confirm(
-                                `Mở lại ${g.label}? Bài đã nộp và phần chấm sẽ bị xóa để nhóm khác vào chọn từ đầu.`,
-                              )
-                            )
-                              return
-                            unlockGroupAction(g.id, true)
-                            toast("Đã mở lại " + g.label)
-                          }}
-                          className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-muted"
-                        >
-                          <Unlock className="size-3.5" aria-hidden="true" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="relative flex-1 overflow-hidden bg-muted/20">
-                    {files.length > 1 ? (
-                      <div className="absolute inset-0 grid grid-cols-2 gap-[2px] bg-border">
-                        {files.slice(0, 4).map((f, i) => (
-                          <div key={i} className="relative overflow-hidden bg-muted/20">
-                            <FileThumb f={f} />
-                            {i === 3 && files.length > 4 && (
-                              <div className="absolute inset-0 bg-black/50 text-white text-sm font-semibold grid place-items-center">
-                                +{files.length - 3}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : files.length === 1 ? (
-                      <div className="absolute inset-0">
-                        <FileThumb f={files[0]} />
-                      </div>
-                    ) : sub?.text_content ? (
-                      <div className="absolute inset-0 p-3 text-sm whitespace-pre-wrap overflow-hidden leading-relaxed">
-                        {sub.text_content}
-                      </div>
-                    ) : (
-                      <div className="absolute inset-0 grid place-items-center text-xs text-muted-foreground p-4 text-center">
-                        {g.claimed ? "Chưa nộp bài" : "Chưa có nhóm chọn"}
-                      </div>
-                    )}
-                    {hasContent && (
-                      <span className="absolute bottom-1.5 right-1.5 bg-card/90 backdrop-blur rounded-full px-2 py-0.5 border text-[10px] flex items-center gap-1 shadow-sm">
-                        {files.length > 0 ? (
-                          <>
-                            <ImageIcon className="size-3" aria-hidden="true" />
-                            {files.length}
-                          </>
-                        ) : (
-                          <FileText className="size-3" aria-hidden="true" />
-                        )}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setSlideshowIdx(idx)
-                      }}
-                      className="absolute top-1.5 right-1.5 bg-card/90 backdrop-blur rounded-md p-1 border text-muted-foreground hover:text-primary shadow-sm opacity-0 group-hover:opacity-100 transition"
-                      title="Phóng to nhóm này để cả lớp xem"
-                    >
-                      <Maximize2 className="size-3" />
-                    </button>
-                  </div>
-                </Card>
-              )
-            })}
+          <div className="h-full">
+            <GroupCardsGrid
+              groups={groups}
+              subsByGroup={subsByGroup}
+              annsByGroup={annsByGroup}
+              liveMap={liveMap}
+              onOpen={(id) => setOpenGroupId(id)}
+              onUnlock={(g) => {
+                if (
+                  !confirm(
+                    `Mở lại ${g.label}? Bài đã nộp và phần chấm sẽ bị xóa để nhóm khác vào chọn từ đầu.`,
+                  )
+                )
+                  return
+                unlockGroupAction(g.id, true)
+                toast("Đã mở lại " + g.label)
+              }}
+              onMaximize={(idx) => setSlideshowIdx(idx)}
+              colsClass={colsClass}
+            />
           </div>
         </div>
       </div>
@@ -737,6 +609,9 @@ export function GroupSessionBoard({
         groupCount={groups.length}
         groups={groups}
         submissions={subs}
+        annotations={anns}
+        shareLink={`${window.location.origin}/c/${shareToken}/session/${session.id}`}
+        liveMap={liveMap}
       >
         {mainContent}
       </PresentationViewer>

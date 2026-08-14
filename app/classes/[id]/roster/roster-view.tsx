@@ -5,6 +5,7 @@ import Link from "next/link"
 import {
   addClassGroupAction,
   bulkSetNamesAction,
+  importStudentsFromListAction,
   moveStudentToGroupAction,
   removeClassGroupAction,
   setCapacityAction,
@@ -38,11 +39,17 @@ import {
   Info,
   MoveRight,
   GripVertical,
+  FileSpreadsheet,
+  Upload,
+  FileCheck2,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { groupCardStyle, groupPillStyle } from "@/lib/group-colors"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import * as XLSX from "xlsx"
+import { Spinner } from "@/components/ui/spinner"
+import { useRef } from "react"
 
 type Student = { id: string; slot_number: number; name: string | null }
 type Group = { id: string; group_number: number; label: string; name: string; color: string }
@@ -65,6 +72,10 @@ export function RosterView({
   const [memberMap, setMemberMap] = useState<Record<string, string[]>>(initialMap)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkText, setBulkText] = useState("")
+  const [importOpen, setImportOpen] = useState(false)
+  const [importPreview, setImportPreview] = useState<string[] | null>(null)
+  const [importFileName, setImportFileName] = useState("")
+  const [importBusy, setImportBusy] = useState(false)
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null)
   const [introOpen, setIntroOpen] = useState(false)
   const [dragStudentId, setDragStudentId] = useState<string | null>(null)
@@ -75,6 +86,7 @@ export function RosterView({
     toGroupId: string
   } | null>(null)
   const [, startTransition] = useTransition()
+  const fileImportRef = useRef<HTMLInputElement | null>(null)
 
   // Map ngược: student_id -> group (để tô màu thẻ HS)
   const studentToGroup = useMemo(() => {
@@ -189,6 +201,55 @@ export function RosterView({
     setBulkOpen(false)
     setBulkText("")
     toast.success("Đã lưu danh sách")
+  }
+
+  // Header detection: bỏ dòng đầu nếu giống tiêu đề cột
+  function looksLikeHeader(v: unknown): boolean {
+    const s = String(v ?? "").trim().toLowerCase()
+    if (!s) return false
+    return /^(stt|số thứ tự|sốtt|no|num|number|họ tên|họ và tên|hoten|họ|tên|full name|fullname|name|student|student name|học sinh|học sinh\b)/.test(
+      s,
+    )
+  }
+
+  async function handleImportFile(file: File) {
+    setImportBusy(true)
+    setImportFileName(file.name)
+    setImportPreview(null)
+    try {
+      const buf = await file.arrayBuffer()
+      const wb = XLSX.read(buf, { type: "array" })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false })
+      let names = rows
+        .map((r) => String(r?.[0] ?? "").trim())
+        .filter((n) => n.length > 0)
+      // Nếu dòng đầu trông giống tiêu đề thì bỏ qua
+      if (names.length > 0 && looksLikeHeader(names[0])) names = names.slice(1)
+      if (names.length === 0) {
+        toast.error("Không tìm thấy cột tên nào. Hãy để họ tên ở cột đầu tiên.")
+        return
+      }
+      setImportPreview(names)
+      setImportOpen(true)
+    } catch {
+      toast.error("Không đọc được file. Hãy dùng file .xlsx, .xls hoặc .csv.")
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
+  function onImportConfirm() {
+    if (!importPreview || importPreview.length === 0) return
+    startTransition(() => {
+      importStudentsFromListAction(classId, importPreview).then((res) => {
+        if (!res.ok) toast.error(res.error ?? "Không nhập được danh sách.")
+        else toast.success(`Đã nhập ${res.added} học sinh`)
+      })
+    })
+    setImportOpen(false)
+    setImportPreview(null)
+    setImportFileName("")
   }
 
   function onChangeCapacity(delta: number) {
@@ -425,9 +486,70 @@ export function RosterView({
                 <ListPlus className="size-4 mr-1" aria-hidden="true" />
                 Dán danh sách
               </Button>
+              <Button variant="outline" size="sm" onClick={() => fileImportRef.current?.click()} disabled={importBusy}>
+                {importBusy ? (
+                  <Spinner className="size-4 mr-1" />
+                ) : (
+                  <FileSpreadsheet className="size-4 mr-1" aria-hidden="true" />
+                )}
+                Import Excel
+              </Button>
+              <input
+                ref={fileImportRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) handleImportFile(f)
+                  e.target.value = ""
+                }}
+              />
             </div>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
+            {importOpen && importPreview && (
+              <div className="rounded-lg border bg-muted/40 p-3 flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <FileCheck2 className="size-4 text-primary" aria-hidden="true" />
+                  Nhập từ {importFileName || "file"}
+                  <span className="text-xs text-muted-foreground font-normal">
+                    — {importPreview.length} học sinh
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Dự kiến ghi tên theo thứ tự ô 1, 2, 3...{importPreview.length > capacity ? ` Sĩ số sẽ tăng lên ${importPreview.length}.` : ""}
+                </p>
+                <ul className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                  {importPreview.map((n, i) => (
+                    <li
+                      key={i}
+                      className="rounded bg-background border px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                    >
+                      <span className="text-primary tabular-nums font-semibold mr-1">{i + 1}</span>
+                      {n}
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={onImportConfirm}>
+                    <Save className="size-4 mr-1" aria-hidden="true" />
+                    Lưu danh sách
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setImportOpen(false)
+                      setImportPreview(null)
+                      setImportFileName("")
+                    }}
+                  >
+                    Hủy
+                  </Button>
+                </div>
+              </div>
+            )}
             {bulkOpen && (
               <div className="rounded-lg border bg-muted/40 p-3 flex flex-col gap-2">
                 <p className="text-xs text-muted-foreground">

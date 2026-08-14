@@ -26,6 +26,17 @@ export function PresentationUpload({
       return
     }
 
+    // Kiểm tra magic number: pptx là ZIP (PK), ppt là OLE2 (D0 CF 11 E0)
+    const head = new Uint8Array(await file.slice(0, 8).arrayBuffer())
+    const isZip =
+      head[0] === 0x50 && head[1] === 0x4b && [0x03, 0x05, 0x07].includes(head[2])
+    const isOle =
+      head[0] === 0xd0 && head[1] === 0xcf && head[2] === 0x11 && head[3] === 0xe0
+    if (!isZip && !isOle) {
+      toast.error("File không đúng định dạng PowerPoint. Hãy chọn file .ppt hoặc .pptx hợp lệ.")
+      return
+    }
+
     setIsLoading(true)
     try {
       const response = await fetch("/api/presentations/upload", {

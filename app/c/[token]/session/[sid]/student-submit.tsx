@@ -66,6 +66,11 @@ function deviceId() {
   return id
 }
 
+// Khóa lưu trạng thái "đang chọn nhóm/ô" cho phiên — để tải lại trang không bị mất
+function selectedKey(sessionId: string) {
+  return `tln_selected_${sessionId}`
+}
+
 function detectKind(mime: string, name: string): SubmissionFileKind {
   const n = name.toLowerCase()
   if (mime.startsWith("image/") || /\.(jpe?g|png|heic|heif|webp|gif)$/i.test(n)) return "image"
@@ -180,6 +185,19 @@ export function StudentSubmit({
     }
   }, [session.id, supabase])
 
+  // Khôi phục nhóm/ô đã chọn trước đó (tải lại trang không bị mất bài đang làm)
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const saved = localStorage.getItem(selectedKey(session.id))
+    if (!saved) return
+    if (kind === "group") {
+      if (groups.some((g) => g.id === saved)) setSelectedId(saved)
+    } else {
+      if (slots.some((s) => s.id === saved)) setSelectedId(saved)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.id, kind])
+
   useEffect(() => {
     if (kind !== "group" || !selectedId) return
     const g = groups.find((x) => x.id === selectedId)
@@ -187,15 +205,21 @@ export function StudentSubmit({
       setSelectedId(null)
       setSubmitted(false)
       autoSubmitted.current = false
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(selectedKey(session.id))
+      }
     }
-  }, [groups, kind, selectedId])
+  }, [groups, kind, selectedId, session.id])
 
   async function pickGroup(gid: string) {
     setBusy(true)
     try {
       const res = await studentClaimGroupAction(gid, deviceId(), selfStudentId)
       if (!res.ok) toast.error(res.error ?? "Không thể chọn nhóm.")
-      else setSelectedId(gid)
+      else {
+        setSelectedId(gid)
+        if (typeof window !== "undefined") localStorage.setItem(selectedKey(session.id), gid)
+      }
     } finally {
       setBusy(false)
     }
@@ -206,7 +230,10 @@ export function StudentSubmit({
     try {
       const res = await studentClaimSlotAction(slotId, deviceId(), studentId ?? null)
       if (!res.ok) toast.error(res.error ?? "Không thể chọn ô.")
-      else setSelectedId(slotId)
+      else {
+        setSelectedId(slotId)
+        if (typeof window !== "undefined") localStorage.setItem(selectedKey(session.id), slotId)
+      }
     } finally {
       setBusy(false)
     }

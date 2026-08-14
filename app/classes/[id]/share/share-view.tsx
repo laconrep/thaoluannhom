@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { rotateShareTokenAction } from "@/app/actions"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { QRCodeSVG } from "qrcode.react"
 import { Copy, RotateCw, QrCode, ExternalLink } from "lucide-react"
 
 export function ShareView({
@@ -68,15 +69,7 @@ export function ShareView({
 
           <div className="rounded-md border bg-card p-3 flex flex-col items-center gap-2">
             <QrCode className="size-5 text-muted-foreground" aria-hidden="true" />
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
-                classUrl,
-              )}`}
-              alt="QR code lớp học"
-              width={200}
-              height={200}
-              className="rounded"
-            />
+            <QRCodeSVG value={classUrl} size={200} level="M" className="rounded" />
             <p className="text-xs text-muted-foreground">Chiếu cho cả lớp quét</p>
           </div>
         </CardContent>

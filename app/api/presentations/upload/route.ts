@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
+import { PLAN_DEFAULT, planLimits, type Plan } from "@/lib/plans"
 
 // Simplified: just assume PPTX has slides, we'll create placeholders
 // In a real implementation, you'd parse the PPTX properly
@@ -19,6 +20,23 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Giới hạn số file trình chiếu mỗi giáo viên (quota phòng chống lạm dụng)
+    const [{ data: profile }, { count }] = await Promise.all([
+      supabase.from("profiles").select("plan").eq("id", user.id).maybeSingle(),
+      supabase
+        .from("presentations")
+        .select("id", { count: "exact", head: true })
+        .eq("teacher_id", user.id),
+    ])
+    const plan = (profile?.plan as Plan | undefined) ?? PLAN_DEFAULT
+    const maxPresentations = planLimits(plan).maxPresentations
+    if (count !== null && count >= maxPresentations) {
+      return NextResponse.json(
+        { error: `Gói ${plan} giới hạn ${maxPresentations} bài trình chiếu. Hãy xóa bớt bài cũ hoặc nâng cấp gói.` },
+        { status: 429 },
+      )
     }
 
     const payload = await request.json()
@@ -106,7 +124,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error("[v0] Presentation upload error:", error)
+    console.error("Presentation upload error:", error)
     return NextResponse.json({ error: "Upload failed" }, { status: 500 })
   }
 }

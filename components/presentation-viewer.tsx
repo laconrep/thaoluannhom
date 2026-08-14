@@ -1,9 +1,16 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { ChevronRight, PanelLeft, X } from "lucide-react"
+import { ChevronRight, Download, Link as LinkIcon, Presentation, QrCode, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
+import { QRCodeSVG } from "qrcode.react"
+import { AnnotationEditor } from "@/components/annotation-editor"
+import { GroupCardsGrid } from "@/components/group-card"
+import { getFiles } from "@/lib/submission-files"
+import { saveAnnotationAction } from "@/app/actions"
+import type { AnnotationItem, AnnotationRow, SubmissionRow } from "@/lib/types"
 
 export interface PresentationViewerProps {
   presentationId: string
@@ -13,121 +20,381 @@ export interface PresentationViewerProps {
   groupCount: number
   submissions: any[]
   groups?: any[]
+  annotations?: any[]
+  shareLink?: string
+  liveMap?: Record<string, number>
 }
 
-export function PresentationViewer({ presentationId, sessionId, isTeacher, children, groupCount, submissions, groups = [] }: PresentationViewerProps) {
+function colsFor(count: number): string {
+  if (count <= 4) return "grid-cols-2"
+  if (count <= 9) return "grid-cols-3"
+  return "grid-cols-4"
+}
+
+export function PresentationViewer({
+  presentationId,
+  sessionId,
+  isTeacher,
+  children,
+  groupCount,
+  submissions,
+  groups = [],
+  annotations = [],
+  shareLink = "",
+  liveMap = {},
+}: PresentationViewerProps) {
   const [presentation, setPresentation] = useState<any>(null)
   const [active, setActive] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [showQr, setShowQr] = useState(false)
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
-  const [hoverTimer, setHoverTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
+  const [rawUrl, setRawUrl] = useState<string | null>(null)
+  const [openGroupId, setOpenGroupId] = useState<string | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null)
-  const projectionRef = useRef<HTMLDivElement>(null)
+  const [hoverTimer, setHoverTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
   const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase.from("presentations").select("*").eq("id", presentationId).single()
+      if (!presentationId) return
+      const { data } = await supabase
+        .from("presentations")
+        .select("*")
+        .eq("id", presentationId)
+        .single()
       if (!data) return
       setPresentation(data)
-      setRemainingSeconds(data.ends_at ? Math.max(0, Math.ceil((new Date(data.ends_at).getTime() - Date.now()) / 1000)) : null)
+      setRemainingSeconds(
+        data.ends_at ? Math.max(0, Math.ceil((new Date(data.ends_at).getTime() - Date.now()) / 1000)) : null,
+      )
       if (!isTeacher) setActive(Boolean(data.is_visible))
-      const { data: signed } = await supabase.storage.from("presentations").createSignedUrl(data.storage_path ?? data.file_path, 3600)
-      if (signed?.signedUrl) setSourceUrl(`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(signed.signedUrl)}`)
+      const { data: signed } = await supabase.storage
+        .from("presentations")
+        .createSignedUrl(data.storage_path ?? data.file_path, 3600)
+      if (signed?.signedUrl) {
+        setRawUrl(signed.signedUrl)
+        setSourceUrl(
+          `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(signed.signedUrl)}`,
+        )
+      }
     }
     load()
-  }, [isTeacher, presentationId, supabase])
+  }, [presentationId, supabase, isTeacher])
 
   useEffect(() => {
+    if (!presentationId) return
+    const channel = supabase
+      .channel(`presentation-${presentationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "presentations",
+          filter: `id=eq.${presentationId}`,
+        },
+        (payload: any) => {
+          setPresentation(payload.new)
+          if (!isTeacher) setActive(Boolean(payload.new?.is_visible))
+          setRemainingSeconds(
+            payload.new?.ends_at
+              ? Math.max(0, Math.ceil((new Date(payload.new.ends_at).getTime() - Date.now()) / 1000))
+              : null,
+          )
+        },
+      )
+      .subscribe()
     return () => {
-      if (hoverTimer) clearTimeout(hoverTimer)
+      supabase.removeChannel(channel)
     }
-  }, [hoverTimer])
+  }, [presentationId, supabase, isTeacher])
 
   useEffect(() => {
-    const start = () => setActive(true)
-    const openGroup = (event: Event) => {
-      const id = (event as CustomEvent<string>).detail
-      window.dispatchEvent(new CustomEvent("presentation-open-group", { detail: id }))
-      setDrawerOpen(false)
-    }
+    if (!active || !presentation?.ends_at) return
+    const tick = () =>
+      setRemainingSeconds(
+        Math.max(0, Math.ceil((new Date(presentation.ends_at).getTime() - Date.now()) / 1000)),
+      )
+    tick()
+    const interval = window.setInterval(tick, 1000)
+    return () => window.clearInterval(interval)
+  }, [active, presentation?.ends_at])
+
+  useEffect(() => {
+    const start = () => startPresentation()
     window.addEventListener("presentation-start", start)
-    window.addEventListener("presentation-open-group", openGroup)
-    return () => {
-      window.removeEventListener("presentation-start", start)
-      window.removeEventListener("presentation-open-group", openGroup)
-    }
-  }, [])
+    return () => window.removeEventListener("presentation-start", start)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presentationId])
 
-  useEffect(() => {
-    if (!active || !presentation) return
-    const channel = supabase.channel(`presentation-${presentationId}`).on("postgres_changes", { event: "UPDATE", schema: "public", table: "presentations", filter: `id=eq.${presentationId}` }, (payload: any) => {
-        setPresentation(payload.new)
-        if (!isTeacher) setActive(Boolean(payload.new?.is_visible))
-        setRemainingSeconds(payload.new?.ends_at ? Math.max(0, Math.ceil((new Date(payload.new.ends_at).getTime() - Date.now()) / 1000)) : null)
-      }).subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [active, isTeacher, presentation, presentationId, supabase])
+  const subsByGroup = useMemo(() => {
+    const m: Record<string, SubmissionRow> = {}
+    for (const s of submissions) if (s.session_group_id) m[s.session_group_id] = s
+    return m
+  }, [submissions])
+
+  const annsByGroup = useMemo(() => {
+    const m: Record<string, AnnotationRow> = {}
+    for (const a of annotations) if (a.session_group_id) m[a.session_group_id] = a
+    return m
+  }, [annotations])
 
   const orderedGroups = Array.from({ length: Math.max(groupCount, 8) }, (_, i) => i + 1)
   const hasSubmission = (number: number) => {
     const group = groups.find((item) => item.group_number === number)
     return group ? submissions.some((item) => item.session_group_id === group.id) : false
   }
-  useEffect(() => {
-    if (!active || !presentation?.ends_at) return
-    const tick = () => setRemainingSeconds(Math.max(0, Math.ceil((new Date(presentation.ends_at).getTime() - Date.now()) / 1000)))
-    tick()
-    const interval = window.setInterval(tick, 1000)
-    return () => window.clearInterval(interval)
-  }, [active, presentation?.ends_at])
 
-  const startPresentation = () => {
+  function startPresentation() {
     setActive(true)
-    projectionRef.current?.requestFullscreen?.().catch(() => undefined)
-    const event = new CustomEvent("presentation-started")
-    window.dispatchEvent(event)
-    supabase.from("presentations").update({ is_visible: true }).eq("id", presentationId).then(() => undefined)
+    const p = document.documentElement.requestFullscreen?.()
+    if (p) p.catch(() => undefined)
+    window.dispatchEvent(new Event("presentation-started"))
+    supabase
+      .from("presentations")
+      .update({ is_visible: true })
+      .eq("id", presentationId)
+      .then(() => undefined)
   }
-  const stopPresentation = () => {
+
+  function stopPresentation() {
     setActive(false)
     setDrawerOpen(false)
-    supabase.from("presentations").update({ is_visible: false }).eq("id", presentationId).then(() => undefined)
+    setShowQr(false)
+    setOpenGroupId(null)
+    const p = document.exitFullscreen?.()
+    if (p) p.catch(() => undefined)
+    supabase
+      .from("presentations")
+      .update({ is_visible: false })
+      .eq("id", presentationId)
+      .then(() => undefined)
   }
+
   const openGroup = (number: number) => {
     const sessionGroup = groups.find((item) => item.group_number === number)
-    if (sessionGroup) window.dispatchEvent(new CustomEvent("presentation-open-group", { detail: sessionGroup.id }))
+    if (sessionGroup) {
+      setOpenGroupId(sessionGroup.id)
+      setDrawerOpen(false)
+    }
   }
 
+  const copyLink = () => {
+    if (!shareLink) return
+    navigator.clipboard.writeText(shareLink)
+    toast.success("Đã sao chép link HS làm bài", { duration: 2000 })
+  }
+
+  const openGroupRow = openGroupId ? groups.find((g) => g.id === openGroupId) ?? null : null
+  const openSub = openGroupRow ? subsByGroup[openGroupRow.id] : null
+  const openAnn = openGroupRow ? annsByGroup[openGroupRow.id] : null
+
   if (!presentation) return <>{children}</>
-  if (!active) return <div className="relative min-h-full">{children}{isTeacher && <Button onClick={startPresentation} className="fixed bottom-5 right-5 z-40 gap-2"><PanelLeft className="size-4" />Trình chiếu PowerPoint</Button>}</div>
+  if (!active)
+    return (
+      <div className="relative min-h-full">
+        {children}
+        {isTeacher && (
+          <Button
+            onClick={startPresentation}
+            className="fixed bottom-5 right-5 z-40 gap-2"
+          >
+            <Presentation className="size-4" />
+            Trình chiếu PowerPoint
+          </Button>
+        )}
+      </div>
+    )
 
   return (
-    <div ref={projectionRef} className="fixed inset-0 z-[70] bg-black text-white">
-      {remainingSeconds !== null && <div className="fixed left-1/2 top-3 z-[110] -translate-x-1/2 rounded-md bg-black/75 px-4 py-2 font-mono text-xl tabular-nums">{String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:{String(remainingSeconds % 60).padStart(2, "0")}</div>}
-      {sourceUrl ? <iframe title={presentation.file_name} src={sourceUrl} className="absolute inset-0 h-full w-full border-0" allowFullScreen /> : <div className="grid h-full place-items-center">Đang mở PowerPoint…</div>}
+    <div className="fixed inset-0 z-[70] bg-black text-white">
+      {remainingSeconds !== null && (
+        <div className="absolute left-1/2 top-3 z-30 -translate-x-1/2 rounded-md bg-black/75 px-4 py-2 font-mono text-xl tabular-nums">
+          {String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:
+          {String(remainingSeconds % 60).padStart(2, "0")}
+        </div>
+      )}
+      {sourceUrl ? (
+        <iframe
+          title={presentation.file_name}
+          src={sourceUrl}
+          className="absolute inset-0 h-full w-full border-0"
+          allowFullScreen
+        />
+      ) : (
+        <div className="grid h-full place-items-center">Đang mở PowerPoint…</div>
+      )}
+
       {isTeacher && (
         <>
+          {/* Left hover zone */}
           <div
-            className="fixed inset-y-0 left-0 z-[90] w-8 cursor-e-resize"
-            onMouseEnter={() => {
-              if (hoverTimer) clearTimeout(hoverTimer)
+            className="absolute left-0 top-0 bottom-0 w-6 z-10"
+            onMouseEnter={() =>
               setHoverTimer(setTimeout(() => setDrawerOpen(true), 2000))
-            }}
+            }
             onMouseLeave={() => {
               if (hoverTimer) clearTimeout(hoverTimer)
-              setHoverTimer(null)
             }}
           />
-          <div className={`fixed inset-y-0 left-0 z-[95] w-[min(340px,82vw)] bg-background text-foreground shadow-2xl transition-transform duration-300 ${drawerOpen ? "translate-x-0" : "-translate-x-full"}`}>
-            <div className="flex items-center justify-between border-b p-3"><strong>Giao việc cho nhóm</strong><button onClick={() => { setDrawerOpen(false); setHoverTimer(null) }} aria-label="Thu gọn bảng nhóm" className="rounded p-1 hover:bg-muted"><ChevronRight className="size-5" /></button></div>
-            <div data-projection-discussion-panel className="h-[calc(100%-57px)] overflow-auto bg-background p-3 [&_.presentation-upload]:hidden">
-              {children}
+
+          {/* Drawer: giao việc cho nhóm + thẻ nhóm đầy đủ */}
+          <div
+            className={`absolute left-0 top-0 bottom-0 z-20 w-[min(880px,92vw)] bg-background text-foreground shadow-2xl transition-transform duration-300 flex flex-col ${
+              drawerOpen ? "translate-x-0" : "-translate-x-full"
+            }`}
+          >
+            <div className="flex items-center gap-2 border-b p-3">
+              <strong>Giao việc cho nhóm</strong>
+              {shareLink && (
+                <>
+                  <Button variant="outline" size="sm" className="gap-1" onClick={copyLink}>
+                    <LinkIcon className="size-3.5" />
+                    Link HS làm bài
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1" onClick={() => setShowQr(true)}>
+                    <QrCode className="size-3.5" />
+                    QR code
+                  </Button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(false)}
+                aria-label="Thu gọn bảng nhóm"
+                className="ml-auto rounded p-1.5 hover:bg-muted"
+              >
+                <ChevronRight className="size-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-3">
+              <GroupCardsGrid
+                groups={groups}
+                subsByGroup={subsByGroup}
+                annsByGroup={annsByGroup}
+                liveMap={liveMap}
+                onOpen={(id) => {
+                  setOpenGroupId(id)
+                  setDrawerOpen(false)
+                }}
+                colsClass={colsFor(groups.length)}
+              />
             </div>
           </div>
-          <div className={`fixed inset-y-0 left-0 z-[88] flex w-[2.5vw] flex-col justify-center gap-1 py-8 transition-opacity ${drawerOpen ? "pointer-events-none opacity-0" : "opacity-100"}`}>{orderedGroups.slice(0, 4).map((number) => <button key={number} onClick={() => openGroup(number)} className={`h-[3.333vh] w-full rounded-r text-[8px] leading-none ${hasSubmission(number) ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground"}`}>Nhóm {number}</button>)}</div>
-          <div className={`fixed inset-y-0 right-0 z-[88] flex w-[2.5vw] flex-col justify-center gap-1 py-8 transition-opacity ${drawerOpen ? "pointer-events-none opacity-0" : "opacity-100"}`}>{orderedGroups.slice(4, 8).map((number) => <button key={number} onClick={() => openGroup(number)} className={`h-[3.333vh] w-full rounded-l text-[8px] leading-none ${hasSubmission(number) ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground"}`}>Nhóm {number}</button>)}</div>
-          <button onClick={stopPresentation} aria-label="Đóng trình chiếu" className="absolute right-3 top-3 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"><X className="size-4" /></button>
+
+          {/* QR modal */}
+          {showQr && shareLink && (
+            <div
+              className="absolute inset-0 z-30 grid place-items-center bg-black/60"
+              onClick={() => setShowQr(false)}
+            >
+              <div
+                className="bg-white text-foreground rounded-xl p-5 flex flex-col items-center gap-3 max-w-[90vw]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <p className="font-heading font-semibold">Quét QR để HS mở link nộp bài</p>
+                <QRCodeSVG value={shareLink} size={220} />
+                <p className="text-xs text-muted-foreground break-all text-center max-w-[280px]">
+                  {shareLink}
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" className="gap-1" onClick={copyLink}>
+                    <LinkIcon className="size-3.5" />
+                    Copy link
+                  </Button>
+                  <Button size="sm" onClick={() => setShowQr(false)}>
+                    Đóng
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Thanh nộp bài bên trái (nhóm 1-4) */}
+          <div className="absolute inset-y-0 left-6 z-20 flex w-[3.333vw] flex-col justify-center gap-1 py-8">
+            {orderedGroups
+              .slice(0, 4)
+              .map(
+                (number) =>
+                  hasSubmission(number) && (
+                    <button
+                      key={number}
+                      onClick={() => openGroup(number)}
+                      title={`Nhóm ${number} - Đã nộp`}
+                      className="h-[5vh] w-full rounded-r bg-primary text-primary-foreground text-[10px]"
+                    >
+                      {number}
+                    </button>
+                  ),
+              )}
+          </div>
+
+          {/* Thanh nộp bài bên phải (nhóm 5-8) */}
+          <div className="absolute inset-y-0 right-0 z-20 flex w-[3.333vw] flex-col justify-center gap-1 py-8">
+            {orderedGroups
+              .slice(4, 8)
+              .map(
+                (number) =>
+                  hasSubmission(number) && (
+                    <button
+                      key={number}
+                      onClick={() => openGroup(number)}
+                      title={`Nhóm ${number} - Đã nộp`}
+                      className="h-[5vh] w-full rounded-l bg-primary text-primary-foreground text-[10px]"
+                    >
+                      {number}
+                    </button>
+                  ),
+              )}
+          </div>
+
+          {/* Nút đóng trình chiếu */}
+          <button
+            type="button"
+            onClick={stopPresentation}
+            aria-label="Đóng trình chiếu"
+            className="absolute right-3 top-3 z-30 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+          >
+            <X className="size-4" />
+          </button>
+
+          {/* Fallback: tải file gốc nếu trình xem online lỗi */}
+          {rawUrl && (
+            <a
+              href={rawUrl}
+              target="_blank"
+              rel="noreferrer"
+              download={presentation.file_name}
+              title="Nếu trang PowerPoint không hiển thị, hãy mở/tải file gốc"
+              className="absolute left-3 bottom-3 z-30 inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80"
+            >
+              <Download className="size-3.5" />
+              Tải file gốc
+            </a>
+          )}
+
+          {/* Công cụ chấm/sửa nổi trên PowerPoint */}
+          {openGroupRow && (
+            <div className="absolute inset-0 z-40">
+              <AnnotationEditor
+                title={`${openGroupRow.label} — ${presentation.file_name ?? ""}`}
+                files={getFiles(openSub ?? undefined)}
+                textContent={openSub?.text_content ?? null}
+                initialData={(openAnn?.data ?? []) as AnnotationItem[]}
+                initialScore={openAnn?.score ?? null}
+                onSave={async (data, score) => {
+                  await saveAnnotationAction({
+                    sessionId,
+                    sessionGroupId: openGroupRow.id,
+                    data,
+                    score,
+                  })
+                  toast.success("Đã lưu", { duration: 1500 })
+                }}
+                onClose={() => setOpenGroupId(null)}
+              />
+            </div>
+          )}
         </>
       )}
     </div>
