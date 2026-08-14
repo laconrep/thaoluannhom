@@ -21,10 +21,10 @@ async function getPlan(supabase: Awaited<ReturnType<typeof createClient>>, userI
 
 export async function upgradeToPlanAction(plan: Plan) {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/auth/login")
+  // Plan changes must come from a trusted billing flow, never from client input.
+  if (plan !== "free") throw new Error("Nâng cấp gói cần được xác nhận qua thanh toán.")
   const { error } = await supabase
     .from("profiles")
     .upsert({ id: user.id, plan, updated_at: new Date().toISOString() }, { onConflict: "id" })
@@ -736,10 +736,13 @@ export async function overrideStudentScoreAction(
 
 export async function studentSetNameAction(studentId: string, name: string, deviceToken: string) {
   const supabase = await createClient()
+  const cleanName = name.trim().slice(0, 120)
+  if (!studentId || !deviceToken || !cleanName) throw new Error("Thông tin học sinh không hợp lệ.")
   const { error } = await supabase
     .from("students")
-    .update({ name: name.trim(), device_token: deviceToken })
+    .update({ name: cleanName, device_token: deviceToken })
     .eq("id", studentId)
+    .or(`device_token.is.null,device_token.eq.${deviceToken}`)
   if (error) throw new Error(error.message)
 }
 
@@ -758,14 +761,17 @@ export async function studentClaimGroupAction(
     .maybeSingle()
   if (!sg) return { ok: false, error: "Không tìm thấy nhóm" }
 
-  // Nếu chưa claim thì claim; nếu đã claim rồi thì cho HS khác cùng nhóm vào luôn
+  // Claim is conditional so concurrent requests cannot create an invalid state.
   if (!sg.claimed) {
-    const { error } = await supabase
+    const { data: claimed, error } = await supabase
       .from("session_groups")
       .update({ claimed: true, claimed_at: new Date().toISOString() })
       .eq("id", sessionGroupId)
       .eq("claimed", false)
+      .select("id")
+      .maybeSingle()
     if (error) return { ok: false, error: error.message }
+    if (!claimed) return { ok: false, error: "Nhóm vừa được người khác chọn." }
   }
 
   // Với phiên chia lại (không có class_group_id), lưu HS vào session_group_members
@@ -802,12 +808,38 @@ export async function studentClaimSlotAction(
   studentId: string | null,
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createClient()
-  const patch: Record<string, unknown> = {}
-  if (studentId) patch.student_id = studentId
-  if (Object.keys(patch).length === 0) return { ok: true }
-  const { error } = await supabase.from("session_slots").update(patch).eq("id", sessionSlotId)
+  if (!sessionSlotId || !_deviceToken || !studentId) return { ok: false, error: "Thông tin chọn ô không hợp lệ." }
+  const { data: slot, error: slotError } = await supabase
+    .from("session_slots")
+    .select("id, student_id")
+    .eq("id", sessionSlotId)
+    .maybeSingle()
+  if (slotError || !slot) return { ok: false, error: "Không tìm thấy ô." }
+  if (slot.student_id && slot.student_id !== studentId) return { ok: false, error: "Ô này đã được chọn." }
+  const { data: updated, error } = await supabase
+    .from("session_slots")
+    .update({ student_id: studentId })
+    .eq("id", sessionSlotId)
+    .or(`student_id.is.null,student_id.eq.${studentId}`)
+    .select("id")
+    .maybeSingle()
   if (error) return { ok: false, error: error.message }
+  if (!updated) return { ok: false, error: "Ô này vừa được chọn bởi người khác." }
   return { ok: true }
+}
+
+async function assertSessionAcceptsSubmission(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  sessionId: string,
+) {
+  const { data: session, error } = await supabase
+    .from("sessions")
+    .select("id, status, ends_at")
+    .eq("id", sessionId)
+    .maybeSingle()
+  if (error || !session) throw new Error("Không tìm thấy phiên làm bài.")
+  // A client timer may fire a moment after ends_at; the authoritative lock is status.
+  if (session.status !== "running") throw new Error("Phiên làm bài đã kết thúc.")
 }
 
 export async function submitGroupReportAction(args: {
@@ -818,6 +850,7 @@ export async function submitGroupReportAction(args: {
   isAuto?: boolean
 }) {
   const supabase = await createClient()
+  await assertSessionAcceptsSubmission(supabase, args.sessionId)
   const { data: existing } = await supabase
     .from("submissions")
     .select("id")
@@ -860,6 +893,7 @@ export async function submitIndividualReportAction(args: {
   isAuto?: boolean
 }) {
   const supabase = await createClient()
+  await assertSessionAcceptsSubmission(supabase, args.sessionId)
   const { data: existing } = await supabase
     .from("submissions")
     .select("id")
