@@ -5,11 +5,19 @@ import { Button } from "@/components/ui/button"
 import { GraduationCap, Users, Presentation, PenLine, ClipboardList } from "lucide-react"
 
 export default async function HomePage() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (user) redirect("/dashboard")
+  // Keep the public landing page renderable while Supabase environment
+  // variables are being provisioned for a deployment.
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (user) redirect("/dashboard")
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("Supabase server configuration is missing")) {
+      throw error
+    }
+  }
 
   return (
     <main className="min-h-svh bg-background">
