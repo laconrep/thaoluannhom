@@ -29,6 +29,7 @@ export interface PresentationViewerProps {
   endsAt?: string | null
   durationSeconds?: number
   forceStart?: boolean
+  board?: (openGroup: (groupNumber: number) => void) => React.ReactNode
 }
 
 function colsFor(count: number): string {
@@ -52,6 +53,7 @@ export function PresentationViewer({
   endsAt = null,
   durationSeconds = 600,
   forceStart = false,
+  board,
 }: PresentationViewerProps) {
   const [presentation, setPresentation] = useState<any>(null)
   const [active, setActive] = useState(false)
@@ -228,7 +230,7 @@ export function PresentationViewer({
       )}
 
       {/* Đồng hồ phiên nổi góc phải */}
-      {status === "running" && (
+      {status !== "idle" && (
         <div
           className="absolute right-4 top-16 z-30 flex items-center justify-center rounded-full border-4 border-green-500 bg-transparent font-mono text-red-500 font-bold tabular-nums"
           style={{ width: "min(5vw, 5vh)", height: "min(5vw, 5vh)", fontSize: "min(1.4vw, 1.4vh)" }}
@@ -290,27 +292,35 @@ export function PresentationViewer({
                 <ChevronRight className="size-5" />
               </button>
             </div>
-            <div className="p-3 pb-0">
-              <TimerPanel
-                sessionId={sessionId}
-                status={status}
-                endsAt={endsAt}
-                durationSeconds={durationSeconds}
-                forceStart={forceStart}
-              />
-            </div>
-            <div className="flex-1 overflow-auto p-3">
-              <GroupCardsGrid
-                groups={groups}
-                subsByGroup={subsByGroup}
-                annsByGroup={annsByGroup}
-                liveMap={liveMap}
-                onOpen={(id) => {
-                  setOpenGroupId(id)
-                  setDrawerOpen(false)
-                }}
-                colsClass={colsFor(groups.length)}
-              />
+            <div className="flex-1 overflow-auto">
+              {board ? (
+                board(openGroup)
+              ) : (
+                <>
+                  <div className="p-3 pb-0">
+                    <TimerPanel
+                      sessionId={sessionId}
+                      status={status}
+                      endsAt={endsAt}
+                      durationSeconds={durationSeconds}
+                      forceStart={forceStart}
+                    />
+                  </div>
+                  <div className="p-3">
+                    <GroupCardsGrid
+                      groups={groups}
+                      subsByGroup={subsByGroup}
+                      annsByGroup={annsByGroup}
+                      liveMap={liveMap}
+                      onOpen={(id) => {
+                        setOpenGroupId(id)
+                        setDrawerOpen(false)
+                      }}
+                      colsClass={colsFor(groups.length)}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

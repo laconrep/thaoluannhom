@@ -31,9 +31,6 @@ export function TimerPanel({
 }) {
   const [minutes, setMinutes] = useState<number>(() => Math.floor(durationSeconds / 60))
   const [seconds, setSeconds] = useState<number>(() => durationSeconds % 60)
-  const [reopenOpen, setReopenOpen] = useState(false)
-  const [reopenMin, setReopenMin] = useState(5)
-  const [reopenSec, setReopenSec] = useState(0)
   const [, startTransition] = useTransition()
   const [forcedStartHandled, setForcedStartHandled] = useState(false)
 
@@ -78,7 +75,7 @@ export function TimerPanel({
         ? 0
         : 100
 
-  const clockValue = status === "running" ? formatClock(left) : formatClock(totalConfigured)
+  const clockValue = status === "running" ? formatClock(left) : status === "ended" ? "00:00" : formatClock(totalConfigured)
 
   const isLow = status === "running" && left > 0 && left <= 15
 
@@ -102,17 +99,15 @@ export function TimerPanel({
     })
   }
   function handleEnd() {
-    if (!confirm("Kết thúc phiên? Học sinh sẽ không nộp được nữa.")) return
     startTransition(() => {
       endSessionAction(sessionId)
     })
   }
   function handleReopen() {
-    const extra = Math.max(5, reopenMin * 60 + reopenSec)
+    const duration = Math.max(5, minutes * 60 + seconds)
     startTransition(() => {
-      reopenSessionAction(sessionId, extra)
+      reopenSessionAction(sessionId, duration)
     })
-    setReopenOpen(false)
   }
   function applyPreset(mins: number) {
     setMinutes(mins)
@@ -144,7 +139,7 @@ export function TimerPanel({
         />
       </div>
 
-      {status !== "running" && !reopenOpen && (
+      {status !== "running" && (
         <>
           <div className="flex items-center gap-1">
             <Input
@@ -207,63 +202,13 @@ export function TimerPanel({
         </div>
       )}
 
-      {status === "ended" && !reopenOpen && (
+      {status === "ended" && (
         <div className="flex flex-col gap-1">
           <span className="text-xs text-center text-muted-foreground">Đã kết thúc</span>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setReopenOpen(true)}
-            className="gap-1"
-          >
+          <Button size="sm" variant="outline" onClick={handleReopen} className="gap-1">
             <RotateCcw className="size-3" aria-hidden="true" />
             Mở lại phiên
           </Button>
-        </div>
-      )}
-
-      {status === "ended" && reopenOpen && (
-        <div className="flex flex-col gap-1.5 rounded border border-dashed p-2 bg-muted/30">
-          <p className="text-[11px] font-medium">Mở thêm bao lâu?</p>
-          <div className="flex items-center gap-1">
-            <Input
-              type="number"
-              min={0}
-              max={180}
-              value={reopenMin}
-              onChange={(e) =>
-                setReopenMin(Math.max(0, Math.min(180, Number(e.target.value) || 0)))
-              }
-              className="h-7 text-xs text-center"
-              aria-label="Phút"
-            />
-            <span className="text-[10px] text-muted-foreground">p</span>
-            <Input
-              type="number"
-              min={0}
-              max={59}
-              value={reopenSec}
-              onChange={(e) =>
-                setReopenSec(Math.max(0, Math.min(59, Number(e.target.value) || 0)))
-              }
-              className="h-7 text-xs text-center"
-              aria-label="Giây"
-            />
-            <span className="text-[10px] text-muted-foreground">g</span>
-          </div>
-          <div className="flex gap-1">
-            <Button size="sm" onClick={handleReopen} className="flex-1 h-7 text-xs">
-              Mở lại
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setReopenOpen(false)}
-              className="h-7 text-xs"
-            >
-              Hủy
-            </Button>
-          </div>
         </div>
       )}
     </div>
