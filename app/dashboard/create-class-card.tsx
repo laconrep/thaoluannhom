@@ -12,6 +12,7 @@ import { Plus } from "lucide-react"
 export function CreateClassCard() {
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
 
   if (!open) {
     return (
@@ -35,8 +36,14 @@ export function CreateClassCard() {
       <CardContent>
         <form
           action={(fd) => {
-            startTransition(() => {
-              createClassAction(fd)
+            setError(null)
+            startTransition(async () => {
+              try {
+                await createClassAction(fd)
+              } catch (caught) {
+                const message = caught instanceof Error ? caught.message : "Không thể tạo lớp. Vui lòng thử lại."
+                setError(message)
+              }
             })
           }}
         >
@@ -73,6 +80,11 @@ export function CreateClassCard() {
                 Mỗi phiên thảo luận nhóm sẽ dùng cấu trúc này. Có thể thay đổi sau.
               </FieldDescription>
             </Field>
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
             <div className="flex gap-2">
               <Button type="submit" disabled={pending}>
                 {pending && <Spinner className="mr-2" />}

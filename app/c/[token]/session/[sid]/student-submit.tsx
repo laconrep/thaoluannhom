@@ -169,14 +169,16 @@ export function StudentSubmit({
         "postgres_changes",
         { event: "*", schema: "public", table: "session_groups", filter: `session_id=eq.${session.id}` },
         (p: any) => {
-          if (p.new) setGroups((prev) => prev.map((x) => (x.id === p.new.id ? p.new : x)))
+          if (p.eventType === "DELETE") setGroups((prev) => prev.filter((x) => x.id !== p.old?.id))
+          else if (p.new) setGroups((prev) => prev.map((x) => (x.id === p.new.id ? p.new : x)))
         },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "session_slots", filter: `session_id=eq.${session.id}` },
         (p: any) => {
-          if (p.new) setSlots((prev) => prev.map((x) => (x.id === p.new.id ? p.new : x)))
+          if (p.eventType === "DELETE") setSlots((prev) => prev.filter((x) => x.id !== p.old?.id))
+          else if (p.new) setSlots((prev) => prev.map((x) => (x.id === p.new.id ? p.new : x)))
         },
       )
       .subscribe()
@@ -287,9 +289,12 @@ export function StudentSubmit({
         .from("submissions")
         .upload(path, s.file, { upsert: true, contentType: s.file.type || undefined })
       if (upErr) throw new Error(upErr.message)
-      const { data } = supabase.storage.from("submissions").getPublicUrl(path)
+      const { data: signed, error: signedError } = await supabase.storage
+        .from("submissions")
+        .createSignedUrl(path, 60 * 60 * 24 * 7)
+      if (signedError || !signed?.signedUrl) throw new Error(signedError?.message ?? "Không tạo được link tệp")
       uploaded.push({
-        url: data.publicUrl,
+        url: signed.signedUrl,
         name: s.file.name,
         kind: s.kind,
         mime: s.file.type || "application/octet-stream",
