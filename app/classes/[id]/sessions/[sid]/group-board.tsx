@@ -79,6 +79,14 @@ export function GroupSessionBoard({
   const [presentation, setPresentation] = useState<any>(null) // Presentation loaded
   const [isTeacher, setIsTeacher] = useState(false)
   const [projectionTimerStarted, setProjectionTimerStarted] = useState(false)
+  const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
+  const [sessionsList, setSessionsList] = useState<any[] | null>(null)
+  const [previewData, setPreviewData] = useState<{
+    session: SessionRow
+    groups: SessionGroupRow[]
+    subs: SubmissionRow[]
+    anns: AnnotationRow[]
+  } | null>(null)
   const initRef = useRef(true)
 
   useEffect(() => {
@@ -244,6 +252,69 @@ export function GroupSessionBoard({
     return m
   }, [anns])
 
+  // Dữ liệu đang hiển thị: phiên gốc hoặc phiên đã chọn trong lúc trình chiếu
+  const displaySession = previewData?.session ?? session
+  const displayGroups = previewData?.groups ?? groups
+  const displaySubs = previewData?.subs ?? subs
+  const displayAnns = previewData?.anns ?? anns
+
+  const displaySubsByGroup = useMemo(() => {
+    const m: Record<string, SubmissionRow> = {}
+    for (const s of displaySubs) if (s.session_group_id) m[s.session_group_id] = s
+    return m
+  }, [displaySubs])
+
+  const displayAnnsByGroup = useMemo(() => {
+    const m: Record<string, AnnotationRow> = {}
+    for (const a of displayAnns) if (a.session_group_id) m[a.session_group_id] = a
+    return m
+  }, [displayAnns])
+
+  const displaySubmittedCount = displayGroups.filter((g) => displaySubsByGroup[g.id]).length
+  const displayClaimedCount = displayGroups.filter((g) => g.claimed).length
+
+  async function openSessionPicker() {
+    setSessionPickerOpen(true)
+    if (sessionsList === null) {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from("sessions")
+        .select("id, title, kind, status, duration_seconds, created_at")
+        .eq("class_id", classId)
+        .eq("kind", "group")
+        .order("created_at", { ascending: false })
+      setSessionsList(data ?? [])
+    }
+  }
+
+  async function loadSessionPreview(sid: string) {
+    if (sid === session.id) {
+      setPreviewData(null)
+      setSessionPickerOpen(false)
+      return
+    }
+    const supabase = createClient()
+    const [{ data: s }, { data: sg }, { data: subs }, { data: anns }] = await Promise.all([
+      supabase.from("sessions").select("*").eq("id", sid).single(),
+      supabase
+        .from("session_groups")
+        .select("*")
+        .eq("session_id", sid)
+        .order("group_number"),
+      supabase.from("submissions").select("*").eq("session_id", sid),
+      supabase.from("annotations").select("*").eq("session_id", sid),
+    ])
+    if (s) {
+      setPreviewData({
+        session: s,
+        groups: (sg ?? []) as SessionGroupRow[],
+        subs: (subs ?? []) as SubmissionRow[],
+        anns: (anns ?? []) as AnnotationRow[],
+      })
+    }
+    setSessionPickerOpen(false)
+  }
+
   const openGroup = openGroupId ? groups.find((g) => g.id === openGroupId) : null
   const openSub = openGroup ? subsByGroup[openGroup.id] : null
   const openAnn = openGroup ? annsByGroup[openGroup.id] : null
@@ -266,32 +337,45 @@ export function GroupSessionBoard({
   }, [slideshowIdx, groups.length])
 
   function copyShareLink() {
-    const url = `${window.location.origin}/c/${shareToken}/session/${session.id}`
+    const url = `${window.location.origin}/c/${shareToken}/session/${displaySession.id}`
     navigator.clipboard.writeText(url)
     toast.success("Đã sao chép link cho HS", { duration: 2000 })
   }
 
   function copyResultsLink() {
-    const url = `${window.location.origin}/c/${shareToken}/session/${session.id}/results`
+    const url = `${window.location.origin}/c/${shareToken}/session/${displaySession.id}/results`
     navigator.clipboard.writeText(url)
     toast.success("Đã sao chép link xem kết quả", { duration: 2000 })
   }
 
   async function toggleShareResults() {
-    const share = !session.results_shared_at
-    await shareResultsAction(session.id, share)
+    const share = !displaySession.results_shared_at
+    const patch = {
+      results_shared_at: share ? new Date().toISOString() : null,
+    }
+    await shareResultsAction(displaySession.id, share)
+    if (previewData) setPreviewData((p) => (p ? { ...p, session: { ...p.session, ...patch } } : p))
+    else setSession((s) => ({ ...s, ...patch }))
     toast.success(share ? "Đã chia sẻ kết quả tới HS" : "Đã thu hồi chia sẻ")
   }
 
-  const submittedCount = groups.filter((g) => subsByGroup[g.id]).length
-  const claimedCount = groups.filter((g) => g.claimed).length
+  function handleSessionChanged(next: any) {
+    if (!next) return
+    if (previewData) setPreviewData((p) => (p ? { ...p, session: next } : p))
+    else setSession(next)
+  }
+
+  function handleSessionPatch(patch: Partial<SessionRow>) {
+    if (previewData) setPreviewData((p) => (p ? { ...p, session: { ...p.session, ...patch } } : p))
+    else setSession((s) => ({ ...s, ...patch }))
+  }
 
   const colsClass =
-    groups.length <= 4
+    displayGroups.length <= 4
       ? "grid-cols-2"
-      : groups.length <= 6
+      : displayGroups.length <= 6
         ? "grid-cols-3"
-        : groups.length <= 9
+        : displayGroups.length <= 9
           ? "grid-cols-3"
           : "grid-cols-4"
 
@@ -308,7 +392,7 @@ export function GroupSessionBoard({
           gridTemplateColumns: open ? "260px 1fr" : "64px 1fr",
         }}
       >
-        {/* SIDEBAR */}
+          {/* SIDEBAR */}
         <aside className="flex flex-col gap-2 border rounded-xl bg-card p-2 overflow-auto no-scrollbar">
           {!embedded && (
             <div className="flex items-center gap-1">
@@ -337,31 +421,98 @@ export function GroupSessionBoard({
             </div>
           )}
 
+          {embedded && (
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1 mr-auto text-xs"
+                onClick={openSessionPicker}
+              >
+                <ArrowLeft className="size-3" aria-hidden="true" />
+                Tất cả phiên
+              </Button>
+              {previewData && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 text-xs"
+                  onClick={() => {
+                    setPreviewData(null)
+                    setSessionPickerOpen(false)
+                  }}
+                >
+                  <X className="size-3" aria-hidden="true" />
+                  Về phiên hiện tại
+                </Button>
+              )}
+            </div>
+          )}
+
+          {embedded && sessionPickerOpen && (
+            <div className="flex flex-col gap-1.5 border rounded-lg bg-background p-2">
+              <p className="text-xs font-semibold text-muted-foreground">Chọn phiên thảo luận</p>
+              {sessionsList === null ? (
+                <p className="text-xs text-muted-foreground">Đang tải...</p>
+              ) : (
+                sessionsList.map((s) => {
+                  const isCurrent = s.id === displaySession.id
+                  const isPreview = s.id !== session.id && s.id === previewData?.session.id
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => loadSessionPreview(s.id)}
+                      className={`w-full text-left rounded-md border p-1.5 text-xs transition ${
+                        isCurrent
+                          ? "border-primary bg-primary/10 font-semibold"
+                          : "border-border bg-card hover:bg-muted/40"
+                      }`}
+                    >
+                      <span className="block font-medium leading-tight line-clamp-2">
+                        {s.title}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {s.status === "running"
+                          ? "Đang chạy"
+                          : s.status === "ended"
+                            ? "Đã kết thúc"
+                            : "Chưa bắt đầu"}
+                        {isPreview ? " · Đang xem" : isCurrent ? " · Phiên hiện tại" : ""}
+                      </span>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          )}
+
           {open ? (
             <>
               <h3 className="font-heading font-semibold text-sm leading-tight text-pretty line-clamp-2 mt-1">
-                {session.title}
+                {displaySession.title}
               </h3>
               <p className="text-xs text-muted-foreground">{className}</p>
 
               <TimerPanel
-                sessionId={session.id}
-                status={session.status}
-                endsAt={session.ends_at}
-                durationSeconds={session.duration_seconds}
+                sessionId={displaySession.id}
+                status={displaySession.status}
+                endsAt={displaySession.ends_at}
+                durationSeconds={displaySession.duration_seconds}
                 forceStart={projectionTimerStarted}
+                onChanged={handleSessionChanged}
               />
 
               <div className="grid grid-cols-2 gap-1.5 mt-1">
                 <div className="rounded-md bg-muted/40 px-2 py-1.5 text-center">
                   <p className="text-lg font-heading font-bold tabular-nums leading-none">
-                    {claimedCount}
+                    {displayClaimedCount}
                   </p>
                   <p className="text-[10px] text-muted-foreground">đã chọn</p>
                 </div>
                 <div className="rounded-md bg-primary/10 text-primary px-2 py-1.5 text-center">
                   <p className="text-lg font-heading font-bold tabular-nums leading-none">
-                    {submittedCount}
+                    {displaySubmittedCount}
                   </p>
                   <p className="text-[10px]">đã nộp</p>
                 </div>
@@ -404,7 +555,7 @@ export function GroupSessionBoard({
                   size="sm"
                   onClick={() => presentation ? startPresentationMode() : setSlideshowIdx(0)}
                   className="gap-1"
-                  disabled={groups.length === 0}
+                  disabled={displayGroups.length === 0}
                 >
                   <Presentation className="size-3" aria-hidden="true" />
                   Chế độ chiếu lớp
@@ -420,18 +571,21 @@ export function GroupSessionBoard({
                 <label className="flex items-center justify-between gap-2 text-[11px]">
                   <span className="leading-tight">HS xem được 8 nhóm</span>
                   <Switch
-                    checked={!!session.results_shared_at}
+                    checked={!!displaySession.results_shared_at}
                     onCheckedChange={toggleShareResults}
                     aria-label="Bật chia sẻ kết quả"
                   />
                 </label>
-                {session.results_shared_at && (
+                {displaySession.results_shared_at && (
                   <>
                     <label className="flex items-center justify-between gap-2 text-[11px]">
                       <span className="leading-tight">Cho phép tải xuống</span>
                       <Switch
-                        checked={session.allow_download}
-                        onCheckedChange={(v) => toggleDownloadAction(session.id, v)}
+                        checked={displaySession.allow_download}
+                        onCheckedChange={(v) => {
+                          handleSessionPatch({ allow_download: v })
+                          toggleDownloadAction(displaySession.id, v)
+                        }}
                         aria-label="Cho phép tải xuống"
                       />
                     </label>
@@ -451,8 +605,11 @@ export function GroupSessionBoard({
               <label className="flex items-center justify-between gap-2 text-xs rounded-md border px-2 py-1.5 bg-muted/30 mt-1">
                 <span className="leading-tight">Cho phép dán khi HS gõ</span>
                 <Switch
-                  checked={session.allow_paste}
-                  onCheckedChange={(v) => togglePasteAction(session.id, v)}
+                  checked={displaySession.allow_paste}
+                  onCheckedChange={(v) => {
+                    handleSessionPatch({ allow_paste: v })
+                    togglePasteAction(displaySession.id, v)
+                  }}
                 />
               </label>
 
@@ -477,12 +634,12 @@ export function GroupSessionBoard({
               <div className="h-px bg-border my-1" />
 
               <p className="text-xs font-semibold text-muted-foreground mb-0.5">
-                Các nhóm ({groups.length})
+                Các nhóm ({displayGroups.length})
               </p>
               <ul className="flex flex-col gap-1">
-                {groups.map((g, idx) => {
-                  const sub = subsByGroup[g.id]
-                  const ann = annsByGroup[g.id]
+                {displayGroups.map((g, idx) => {
+                  const sub = displaySubsByGroup[g.id]
+                  const ann = displayAnnsByGroup[g.id]
                   const isLive = !!liveMap[g.id]
                   return (
                     <li key={g.id}>
@@ -548,7 +705,7 @@ export function GroupSessionBoard({
                 <LinkIcon className="size-4" />
               </Button>
               <div className="flex flex-col items-center gap-0.5 pt-2">
-                <span className="text-xs font-bold tabular-nums">{submittedCount}</span>
+                <span className="text-xs font-bold tabular-nums">{displaySubmittedCount}</span>
                 <span className="text-[9px] text-muted-foreground">nộp</span>
               </div>
             </div>
@@ -559,9 +716,9 @@ export function GroupSessionBoard({
         <div className="overflow-auto">
           <div className="h-full">
             <GroupCardsGrid
-              groups={groups}
-              subsByGroup={subsByGroup}
-              annsByGroup={annsByGroup}
+              groups={displayGroups}
+              subsByGroup={displaySubsByGroup}
+              annsByGroup={displayAnnsByGroup}
               liveMap={liveMap}
               onOpen={handleOpen}
               onUnlock={(g) => {
@@ -633,9 +790,9 @@ export function GroupSessionBoard({
         onClick={(e) => e.stopPropagation()}
       >
         <p className="font-heading font-semibold">Quét QR để HS mở link nộp bài</p>
-        <QRCodeSVG value={`${window.location.origin}/c/${shareToken}/session/${session.id}`} size={220} />
+        <QRCodeSVG value={`${window.location.origin}/c/${shareToken}/session/${displaySession.id}`} size={220} />
         <p className="text-xs text-muted-foreground break-all text-center max-w-[280px]">
-          {`${window.location.origin}/c/${shareToken}/session/${session.id}`}
+          {`${window.location.origin}/c/${shareToken}/session/${displaySession.id}`}
         </p>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" className="gap-1" onClick={copyShareLink}>
@@ -656,21 +813,21 @@ export function GroupSessionBoard({
       <>
         <PresentationViewer
           presentationId={presentation.id}
-          sessionId={session.id}
+          sessionId={displaySession.id}
           isTeacher={isTeacher}
-          groupCount={groups.length}
-          groups={groups}
-          submissions={subs}
-          annotations={anns}
-          shareLink={`${window.location.origin}/c/${shareToken}/session/${session.id}`}
+          groupCount={displayGroups.length}
+          groups={displayGroups}
+          submissions={displaySubs}
+          annotations={displayAnns}
+          shareLink={`${window.location.origin}/c/${shareToken}/session/${displaySession.id}`}
           liveMap={liveMap}
-          status={session.status}
-          endsAt={session.ends_at}
-          durationSeconds={session.duration_seconds}
+          status={displaySession.status}
+          endsAt={displaySession.ends_at}
+          durationSeconds={displaySession.duration_seconds}
           forceStart={projectionTimerStarted}
           board={(openGroup) =>
             renderBoard(true, (id) => {
-              const g = groups.find((x) => x.id === id)
+              const g = displayGroups.find((x) => x.id === id)
               if (g) openGroup(g.group_number)
             })
           }
