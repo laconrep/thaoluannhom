@@ -401,6 +401,14 @@ export async function createSessionAction(
   redirect(`/classes/${classId}/sessions/${session.id}`)
 }
 
+async function revalidateSessionPage(sessionId: string) {
+  const supabase = await createClient()
+  const { data } = await supabase.from("sessions").select("class_id").eq("id", sessionId).maybeSingle()
+  if (data?.class_id) {
+    revalidatePath(`/classes/${data.class_id}/sessions/${sessionId}`, "page")
+  }
+}
+
 export async function startSessionAction(sessionId: string, durationSeconds: number) {
   const supabase = await createClient()
   const startedAt = new Date()
@@ -415,7 +423,9 @@ export async function startSessionAction(sessionId: string, durationSeconds: num
     })
     .eq("id", sessionId)
   if (error) throw new Error(error.message)
-  revalidatePath(`/classes/[id]/sessions/${sessionId}`, "page")
+  await revalidateSessionPage(sessionId)
+  const { data } = await supabase.from("sessions").select("*").eq("id", sessionId).maybeSingle()
+  return data
 }
 
 export async function pauseSessionAction(sessionId: string) {
@@ -425,6 +435,8 @@ export async function pauseSessionAction(sessionId: string) {
     .update({ status: "idle", ends_at: null })
     .eq("id", sessionId)
   if (error) throw new Error(error.message)
+  const { data } = await supabase.from("sessions").select("*").eq("id", sessionId).maybeSingle()
+  return data
 }
 
 export async function endSessionAction(sessionId: string) {
@@ -434,6 +446,9 @@ export async function endSessionAction(sessionId: string) {
     .update({ status: "ended", ends_at: null })
     .eq("id", sessionId)
   if (error) throw new Error(error.message)
+  await revalidateSessionPage(sessionId)
+  const { data } = await supabase.from("sessions").select("*").eq("id", sessionId).maybeSingle()
+  return data
 }
 
 export async function reopenSessionAction(sessionId: string, extraSeconds: number) {
@@ -450,6 +465,9 @@ export async function reopenSessionAction(sessionId: string, extraSeconds: numbe
     })
     .eq("id", sessionId)
   if (error) throw new Error(error.message)
+  await revalidateSessionPage(sessionId)
+  const { data } = await supabase.from("sessions").select("*").eq("id", sessionId).maybeSingle()
+  return data
 }
 
 export async function unlockGroupAction(sessionGroupId: string, clearSubmission = false) {

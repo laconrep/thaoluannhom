@@ -22,12 +22,14 @@ export function TimerPanel({
   endsAt,
   durationSeconds,
   forceStart = false,
+  onChanged,
 }: {
   sessionId: string
   status: Status
   endsAt: string | null
   durationSeconds: number
   forceStart?: boolean
+  onChanged?: (session: any) => void
 }) {
   const [minutes, setMinutes] = useState<number>(() => Math.floor(durationSeconds / 60))
   const [seconds, setSeconds] = useState<number>(() => durationSeconds % 60)
@@ -49,17 +51,20 @@ export function TimerPanel({
     if (status !== "running" || !endsAt) return
     const ms = new Date(endsAt).getTime() - Date.now()
     if (ms <= 0) {
-      startTransition(() => {
-        endSessionAction(sessionId)
+      startTransition(async () => {
+        const next = await endSessionAction(sessionId)
+        if (next) onChanged?.(next)
       })
       return
     }
     const id = setTimeout(() => {
-      startTransition(() => {
-        endSessionAction(sessionId)
+      startTransition(async () => {
+        const next = await endSessionAction(sessionId)
+        if (next) onChanged?.(next)
       })
     }, ms + 300)
     return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, endsAt, sessionId])
 
   const totalConfigured = minutes * 60 + seconds
@@ -81,32 +86,40 @@ export function TimerPanel({
 
   function handleStart() {
     const dur = Math.max(5, minutes * 60 + seconds)
-    startTransition(() => {
-      startSessionAction(sessionId, dur)
+    startTransition(async () => {
+      const next = await startSessionAction(sessionId, dur)
+      if (next) onChanged?.(next)
     })
   }
   useEffect(() => {
     if (forceStart && status === "idle" && !forcedStartHandled) {
       setForcedStartHandled(true)
       const duration = Math.max(5, minutes * 60 + seconds)
-      startTransition(() => { startSessionAction(sessionId, duration) })
+      startTransition(async () => {
+        const next = await startSessionAction(sessionId, duration)
+        if (next) onChanged?.(next)
+      })
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forceStart, forcedStartHandled, status, minutes, seconds, sessionId])
 
   function handlePause() {
-    startTransition(() => {
-      pauseSessionAction(sessionId)
+    startTransition(async () => {
+      const next = await pauseSessionAction(sessionId)
+      if (next) onChanged?.(next)
     })
   }
   function handleEnd() {
-    startTransition(() => {
-      endSessionAction(sessionId)
+    startTransition(async () => {
+      const next = await endSessionAction(sessionId)
+      if (next) onChanged?.(next)
     })
   }
   function handleReopen() {
     const duration = Math.max(5, minutes * 60 + seconds)
-    startTransition(() => {
-      reopenSessionAction(sessionId, duration)
+    startTransition(async () => {
+      const next = await reopenSessionAction(sessionId, duration)
+      if (next) onChanged?.(next)
     })
   }
   function applyPreset(mins: number) {
