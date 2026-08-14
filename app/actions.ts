@@ -81,7 +81,6 @@ export async function createClassAction(formData: FormData) {
   const groups = Array.from({ length: numGroups }, (_, i) => ({
     class_id: cls.id,
     group_number: i + 1,
-    label: `Nhóm ${i + 1}`,
     name: `Nhóm ${i + 1}`,
     color: colorForIndex(i),
     display_order: i + 1,
