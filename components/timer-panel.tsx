@@ -21,20 +21,17 @@ export function TimerPanel({
   status,
   endsAt,
   durationSeconds,
-  forceStart = false,
   onChanged,
 }: {
   sessionId: string
   status: Status
   endsAt: string | null
   durationSeconds: number
-  forceStart?: boolean
   onChanged?: (session: any) => void
 }) {
   const [minutes, setMinutes] = useState<number>(() => Math.floor(durationSeconds / 60))
   const [seconds, setSeconds] = useState<number>(() => durationSeconds % 60)
   const [, startTransition] = useTransition()
-  const [forcedStartHandled, setForcedStartHandled] = useState(false)
 
   const left = useCountdown(endsAt, status)
 
@@ -112,21 +109,6 @@ export function TimerPanel({
     }
     runAction(startSessionAction(sessionId, dur), optimistic, { status, ends_at: endsAt, duration_seconds: durationSeconds })
   }
-  useEffect(() => {
-    if (forceStart && status === "idle" && !forcedStartHandled) {
-      setForcedStartHandled(true)
-      const duration = Math.max(5, minutes * 60 + seconds)
-      const now = new Date()
-      const optimistic = {
-        status: "running",
-        duration_seconds: duration,
-        started_at: now.toISOString(),
-        ends_at: new Date(now.getTime() + duration * 1000).toISOString(),
-      }
-      runAction(startSessionAction(sessionId, duration), optimistic, { status, ends_at: endsAt, duration_seconds: durationSeconds })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forceStart, forcedStartHandled, status, minutes, seconds, sessionId])
 
   function handleEnd() {
     runAction(endSessionAction(sessionId), { status: "ended", ends_at: null }, { status, ends_at: endsAt })

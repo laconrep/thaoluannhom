@@ -78,7 +78,6 @@ export function GroupSessionBoard({
   const [liveMap, setLiveMap] = useState<Record<string, number>>({}) // groupId -> timestamp khi có update
   const [presentation, setPresentation] = useState<any>(null) // Presentation loaded
   const [isTeacher, setIsTeacher] = useState(false)
-  const [projectionTimerStarted, setProjectionTimerStarted] = useState(false)
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
   const [sessionsList, setSessionsList] = useState<any[] | null>(null)
   const [previewData, setPreviewData] = useState<{
@@ -91,15 +90,6 @@ export function GroupSessionBoard({
 
   useEffect(() => {
     setSoundOn(isSoundEnabled())
-  }, [])
-
-  // Khi bắt đầu trình chiếu PowerPoint thì đồng bộ đồng hồ ở sidebar
-  useEffect(() => {
-    const startProjectionTimer = () => setProjectionTimerStarted(true)
-    window.addEventListener("presentation-started", startProjectionTimer)
-    return () => {
-      window.removeEventListener("presentation-started", startProjectionTimer)
-    }
   }, [])
 
   // Check if user is teacher
@@ -499,7 +489,6 @@ export function GroupSessionBoard({
                 status={displaySession.status}
                 endsAt={displaySession.ends_at}
                 durationSeconds={displaySession.duration_seconds}
-                forceStart={projectionTimerStarted}
                 onChanged={handleSessionChanged}
               />
 
@@ -824,7 +813,6 @@ export function GroupSessionBoard({
           status={displaySession.status}
           endsAt={displaySession.ends_at}
           durationSeconds={displaySession.duration_seconds}
-          forceStart={projectionTimerStarted}
           board={(openGroup) =>
             renderBoard(true, (id) => {
               const g = displayGroups.find((x) => x.id === id)
