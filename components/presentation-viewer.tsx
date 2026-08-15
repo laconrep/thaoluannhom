@@ -64,6 +64,8 @@ export function PresentationViewer({
   const [openGroupId, setOpenGroupId] = useState<string | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null)
   const [hoverTimer, setHoverTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
+  const [barsVisible, setBarsVisible] = useState(false)
+  const [projectionEnded, setProjectionEnded] = useState(false)
   const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
@@ -176,6 +178,8 @@ export function PresentationViewer({
     setDrawerOpen(false)
     setShowQr(false)
     setOpenGroupId(null)
+    setBarsVisible(false)
+    setProjectionEnded(false)
     const p = document.exitFullscreen?.()
     if (p) p.catch(() => undefined)
     supabase
@@ -183,6 +187,18 @@ export function PresentationViewer({
       .update({ is_visible: false })
       .eq("id", presentationId)
       .then(() => undefined)
+  }
+
+  // Thu màn hình xổ ra: nếu phiên đang chạy thì bật 8 thanh nhóm (latch, không tắt khi mở lại drawer)
+  function collapseDrawer() {
+    setDrawerOpen(false)
+    if (status === "running") setBarsVisible(true)
+  }
+
+  // Kết thúc phiên: chỉ tắt 8 thanh + đồng hồ nổi, phiên vẫn chạy
+  function endProjection() {
+    setBarsVisible(false)
+    setProjectionEnded(true)
   }
 
   const openGroup = (number: number) => {
@@ -230,7 +246,7 @@ export function PresentationViewer({
       )}
 
       {/* Đồng hồ phiên nổi góc phải */}
-      {status !== "idle" && (
+      {status !== "idle" && !projectionEnded && (
         <div
           className="absolute right-4 top-16 z-30 flex items-center justify-center rounded-full border-4 border-green-500 bg-transparent font-mono text-red-500 font-bold tabular-nums"
           style={{ width: "min(5vw, 5vh)", height: "min(5vw, 5vh)", fontSize: "min(1.4vw, 1.4vh)" }}
@@ -285,7 +301,7 @@ export function PresentationViewer({
               )}
               <button
                 type="button"
-                onClick={() => setDrawerOpen(false)}
+                onClick={collapseDrawer}
                 aria-label="Thu gọn bảng nhóm"
                 className="ml-auto rounded p-1.5 hover:bg-muted"
               >
@@ -322,6 +338,13 @@ export function PresentationViewer({
                 </>
               )}
             </div>
+            {/* Kết thúc phiên: tắt 8 thanh nhóm + đồng hồ nổi, phiên vẫn chạy */}
+            <div className="border-t p-2">
+              <Button variant="destructive" size="sm" className="w-full gap-1" onClick={endProjection}>
+                <X className="size-3.5" aria-hidden="true" />
+                Kết thúc phiên
+              </Button>
+            </div>
           </div>
 
           {/* QR modal */}
@@ -353,7 +376,7 @@ export function PresentationViewer({
           )}
 
           {/* Thanh nhóm bên trái (nhóm 1-4) */}
-          {status !== "ended" && (
+          {barsVisible && !projectionEnded && (
             <div className="absolute inset-y-0 left-6 z-20 flex w-[2.5vw] flex-col justify-center gap-1 py-8">
               {orderedGroups.slice(0, 4).map((number) => {
                 const group = groups.find((item) => item.group_number === number)
@@ -378,7 +401,7 @@ export function PresentationViewer({
           )}
 
           {/* Thanh nhóm bên phải (nhóm 5-8) */}
-          {status !== "ended" && (
+          {barsVisible && !projectionEnded && (
             <div className="absolute inset-y-0 right-0 z-20 flex w-[2.5vw] flex-col justify-center gap-1 py-8">
               {orderedGroups.slice(4, 8).map((number) => {
                 const group = groups.find((item) => item.group_number === number)
