@@ -28,7 +28,6 @@ export interface PresentationViewerProps {
   status?: "idle" | "running" | "ended"
   endsAt?: string | null
   durationSeconds?: number
-  forceStart?: boolean
   board?: (openGroup: (groupNumber: number) => void) => React.ReactNode
 }
 
@@ -52,7 +51,6 @@ export function PresentationViewer({
   status = "idle",
   endsAt = null,
   durationSeconds = 600,
-  forceStart = false,
   board,
 }: PresentationViewerProps) {
   const [presentation, setPresentation] = useState<any>(null)
@@ -165,7 +163,6 @@ export function PresentationViewer({
     setActive(true)
     const p = document.documentElement.requestFullscreen?.()
     if (p) p.catch(() => undefined)
-    window.dispatchEvent(new Event("presentation-started"))
     supabase
       .from("presentations")
       .update({ is_visible: true })
@@ -319,7 +316,6 @@ export function PresentationViewer({
                       status={status}
                       endsAt={endsAt}
                       durationSeconds={durationSeconds}
-                      forceStart={forceStart}
                     />
                   </div>
                   <div className="p-3">
