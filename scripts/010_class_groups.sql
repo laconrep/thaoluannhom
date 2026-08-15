@@ -2,13 +2,22 @@
 create table if not exists public.class_groups (
   id uuid primary key default gen_random_uuid(),
   class_id uuid not null references public.classes(id) on delete cascade,
+  group_number int not null default 0,
+  label text,
   name text not null,
   color text not null default '#0d9488',
   display_order int not null default 0,
   created_at timestamptz not null default now()
 );
 
+-- Nếu bảng đã tồn tại (deploy cũ thiếu cột), bổ sung cột cần thiết
+alter table public.class_groups
+  add column if not exists group_number int not null default 0;
+alter table public.class_groups
+  add column if not exists label text;
+
 create index if not exists class_groups_class_id_idx on public.class_groups(class_id, display_order);
+create unique index if not exists class_groups_class_number_uidx on public.class_groups(class_id, group_number);
 
 -- Thành viên nhóm cố định, 1 HS chỉ thuộc 1 nhóm trong 1 lớp
 create table if not exists public.class_group_members (
