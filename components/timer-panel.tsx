@@ -3,12 +3,11 @@
 import { useEffect, useState, useTransition } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Clock, Pause, Play, RotateCcw, StopCircle } from "lucide-react"
+import { Clock, Play, RotateCcw, StopCircle } from "lucide-react"
 import { useCountdown, formatClock } from "@/lib/use-countdown"
 import { toast } from "sonner"
 import {
   endSessionAction,
-  pauseSessionAction,
   reopenSessionAction,
   startSessionAction,
 } from "@/app/actions"
@@ -129,9 +128,6 @@ export function TimerPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forceStart, forcedStartHandled, status, minutes, seconds, sessionId])
 
-  function handlePause() {
-    runAction(pauseSessionAction(sessionId), { status: "idle", ends_at: null }, { status, ends_at: endsAt })
-  }
   function handleEnd() {
     runAction(endSessionAction(sessionId), { status: "ended", ends_at: null }, { status, ends_at: endsAt })
   }
@@ -227,16 +223,10 @@ export function TimerPanel({
       )}
 
       {status === "running" && (
-        <div className="flex gap-1">
-          <Button size="sm" variant="outline" onClick={handlePause} className="flex-1 gap-1">
-            <Pause className="size-3" aria-hidden="true" />
-            Dừng
-          </Button>
-          <Button size="sm" variant="destructive" onClick={handleEnd} className="flex-1 gap-1">
-            <StopCircle className="size-3" aria-hidden="true" />
-            Kết thúc
-          </Button>
-        </div>
+        <Button size="sm" variant="destructive" onClick={handleEnd} className="gap-1 w-full">
+          <StopCircle className="size-3" aria-hidden="true" />
+          Hết giờ
+        </Button>
       )}
 
       {status === "ended" && (
