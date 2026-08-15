@@ -80,7 +80,6 @@ export async function createClassAction(formData: FormData) {
   // Tạo nhóm cố định với màu riêng
   const groups = Array.from({ length: numGroups }, (_, i) => ({
     class_id: cls.id,
-    group_number: i + 1,
     name: `Nhóm ${i + 1}`,
     color: colorForIndex(i),
     display_order: i + 1,
@@ -246,15 +245,13 @@ export async function addClassGroupAction(classId: string) {
   const supabase = await createClient()
   const { data: groups } = await supabase
     .from("class_groups")
-    .select("group_number")
+    .select("display_order")
     .eq("class_id", classId)
-    .order("group_number", { ascending: false })
+    .order("display_order", { ascending: false })
     .limit(1)
-  const nextNum = (groups?.[0]?.group_number ?? 0) + 1
+  const nextNum = (groups?.[0]?.display_order ?? 0) + 1
   const { error } = await supabase.from("class_groups").insert({
     class_id: classId,
-    group_number: nextNum,
-    label: `Nhóm ${nextNum}`,
     name: `Nhóm ${nextNum}`,
     color: colorForIndex(nextNum - 1),
     display_order: nextNum,
