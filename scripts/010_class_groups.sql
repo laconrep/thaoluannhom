@@ -56,12 +56,22 @@ before insert or update on public.class_group_members
 for each row execute function public.enforce_single_class_group();
 
 -- Phiên: dùng nhóm cố định hay chia lại
-alter table public.sessions
-  add column if not exists use_fixed_groups boolean not null default false;
+do $$
+begin
+  if to_regclass('public.sessions') is not null then
+    alter table public.sessions
+      add column if not exists use_fixed_groups boolean not null default false;
+  end if;
+end $$;
 
 -- Nhóm phiên liên kết tới class_group (khi dùng nhóm cố định)
-alter table public.session_groups
-  add column if not exists class_group_id uuid references public.class_groups(id) on delete set null;
+do $$
+begin
+  if to_regclass('public.session_groups') is not null then
+    alter table public.session_groups
+      add column if not exists class_group_id uuid references public.class_groups(id) on delete set null;
+  end if;
+end $$;
 
 -- Khi HS chia lại nhóm, mỗi nhóm phiên có danh sách thành viên (student_id)
 create table if not exists public.session_group_members (
@@ -74,8 +84,13 @@ create table if not exists public.session_group_members (
 create index if not exists session_group_members_student_idx on public.session_group_members(student_id);
 
 -- Điểm HS: thêm cột group_name để giữ lịch sử
-alter table public.student_scores
-  add column if not exists group_name text;
+do $$
+begin
+  if to_regclass('public.student_scores') is not null then
+    alter table public.student_scores
+      add column if not exists group_name text;
+  end if;
+end $$;
 
 -- RLS
 alter table public.class_groups enable row level security;
