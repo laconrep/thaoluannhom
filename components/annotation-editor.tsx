@@ -29,7 +29,6 @@ import {
   ZoomOut,
   Stamp,
   Hand,
-  PresentationIcon,
   Eye,
 } from "lucide-react"
 
@@ -469,7 +468,6 @@ export function AnnotationEditor({
       if (e.key === "0") setZoomLevel(1)
       if (e.key === "+" || e.key === "=") setZoomLevel((z) => Math.min(3, z + 0.25))
       if (e.key === "-") setZoomLevel((z) => Math.max(0.5, z - 0.25))
-      if (e.key === "p" || e.key === "P") setPresentationMode((v) => !v)
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -615,18 +613,18 @@ export function AnnotationEditor({
             )}
 
             {/* Undo / clear / rotate */}
-            <Button variant="ghost" size="icon" onClick={undo} disabled={history.length === 0} className="size-8 rounded-full" aria-label="Hoàn tác">
+            <Button variant="ghost" size="icon" onClick={undo} disabled={history.length === 0} className="size-8 rounded-full text-foreground" aria-label="Hoàn tác">
               <Undo2 className="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={clearAll} className="size-8 rounded-full" aria-label="Xóa hết">
+            <Button variant="ghost" size="icon" onClick={clearAll} className="size-8 rounded-full text-foreground" aria-label="Xóa hết">
               <Trash2 className="size-4" />
             </Button>
             {isImage && (
               <>
-                <Button variant="ghost" size="icon" onClick={() => rotateCurrent(-90)} className="size-8 rounded-full" aria-label="Xoay trái">
+                <Button variant="ghost" size="icon" onClick={() => rotateCurrent(-90)} className="size-8 rounded-full text-foreground" aria-label="Xoay trái">
                   <RotateCcw className="size-4" />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => rotateCurrent(90)} className="size-8 rounded-full" aria-label="Xoay phải">
+                <Button variant="ghost" size="icon" onClick={() => rotateCurrent(90)} className="size-8 rounded-full text-foreground" aria-label="Xoay phải">
                   <RotateCw className="size-4" />
                 </Button>
               </>
@@ -635,7 +633,7 @@ export function AnnotationEditor({
             <div className="h-6 w-px bg-border" />
 
             {/* Zoom */}
-            <Button variant="ghost" size="icon" onClick={() => setZoomLevel((z) => Math.max(0.5, z - 0.25))} className="size-8 rounded-full" aria-label="Thu nhỏ">
+            <Button variant="ghost" size="icon" onClick={() => setZoomLevel((z) => Math.max(0.5, z - 0.25))} className="size-8 rounded-full text-foreground" aria-label="Thu nhỏ">
               <ZoomOut className="size-4" />
             </Button>
             <button
@@ -646,22 +644,8 @@ export function AnnotationEditor({
             >
               {Math.round(zoomLevel * 100)}%
             </button>
-            <Button variant="ghost" size="icon" onClick={() => setZoomLevel((z) => Math.min(3, z + 0.25))} className="size-8 rounded-full" aria-label="Phóng to">
+            <Button variant="ghost" size="icon" onClick={() => setZoomLevel((z) => Math.min(3, z + 0.25))} className="size-8 rounded-full text-foreground" aria-label="Phóng to">
               <ZoomIn className="size-4" />
-            </Button>
-
-            <div className="h-6 w-px bg-border" />
-
-            {/* Presentation + fullscreen */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setPresentationMode((v) => !v)}
-              className="size-8 rounded-full"
-              aria-label="Chế độ trình chiếu (P)"
-              title="Chế độ trình chiếu"
-            >
-              <PresentationIcon className="size-4" />
             </Button>
 
             <div className="h-6 w-px bg-border" />
@@ -669,7 +653,7 @@ export function AnnotationEditor({
             {/* Score + Save */}
             <div className="flex items-center gap-1">
               <Input
-                className="w-14 h-8 text-sm"
+                className="w-14 h-8 text-sm text-foreground"
                 type="number"
                 min={0}
                 max={maxScore}
@@ -1085,7 +1069,7 @@ export function AnnotationEditor({
       {/* Hint góc phải phím tắt */}
       {!presentationMode && isFullscreen && (
         <div className="absolute bottom-3 right-3 z-20 bg-card/80 backdrop-blur text-xs text-muted-foreground px-2.5 py-1 rounded border">
-          <kbd className="font-mono">+/-</kbd> zoom · <kbd className="font-mono">P</kbd> trình chiếu · <kbd className="font-mono">Esc</kbd> thoát
+          <kbd className="font-mono">+/-</kbd> zoom · <kbd className="font-mono">Esc</kbd> thoát
         </div>
       )}
     </div>
