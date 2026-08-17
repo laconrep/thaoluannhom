@@ -903,6 +903,7 @@ export function GroupSessionBoard({
           status={displaySession.status}
           endsAt={displaySession.ends_at}
           durationSeconds={displaySession.duration_seconds}
+          barsOnCollapse={displaySession.status === "running" || previewData !== null}
           board={(openGroup) =>
             renderBoard(true, (id) => {
               const g = displayGroups.find((x) => x.id === id)

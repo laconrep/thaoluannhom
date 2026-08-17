@@ -344,7 +344,6 @@ export function StudentSubmit({
   }, [ended, identityLoaded, selectedId, staged.length, submitted, text])
 
   if (submitted) {
-    const returnHref = typeof window !== "undefined" ? `/c/${window.location.pathname.split("/")[2]}` : "/"
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
         <Card className="max-w-md w-full p-8 text-center space-y-4 float-card">
@@ -354,8 +353,8 @@ export function StudentSubmit({
             {staged.length > 1 ? `${staged.length} tệp` : "Bài của bạn"} đã gửi đến giáo viên.
           </p>
           <div className="flex flex-col gap-2">
-            <Button asChild variant="outline" className="w-full">
-              <Link href={returnHref}>Về trang lớp</Link>
+            <Button variant="outline" className="w-full" onClick={() => setSubmitted(false)}>
+              Quay lại sửa bài
             </Button>
             {resultsShared && (
               <Button asChild className="w-full gap-2">

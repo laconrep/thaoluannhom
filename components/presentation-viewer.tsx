@@ -29,6 +29,7 @@ export interface PresentationViewerProps {
   endsAt?: string | null
   durationSeconds?: number
   board?: (openGroup: (groupNumber: number) => void) => React.ReactNode
+  barsOnCollapse?: boolean
 }
 
 function colsFor(count: number): string {
@@ -52,6 +53,7 @@ export function PresentationViewer({
   endsAt = null,
   durationSeconds = 600,
   board,
+  barsOnCollapse = false,
 }: PresentationViewerProps) {
   const [presentation, setPresentation] = useState<any>(null)
   const [active, setActive] = useState(false)
@@ -198,10 +200,11 @@ export function PresentationViewer({
       .then(() => undefined)
   }
 
-  // Thu màn hình xổ ra: nếu phiên đang chạy thì bật 8 thanh nhóm (latch, không tắt khi mở lại drawer)
+  // Thu màn hình xổ ra: nếu phiên đang chạy hoặc đang xem/preview một phiên thì
+  // bật 8 thanh nhóm (latch, không tắt khi mở lại drawer)
   function collapseDrawer() {
     setDrawerOpen(false)
-    if (status === "running") setBarsVisible(true)
+    if (status === "running" || barsOnCollapse) setBarsVisible(true)
   }
 
   // Kết thúc phiên: chỉ tắt 8 thanh + đồng hồ nổi, phiên vẫn chạy
