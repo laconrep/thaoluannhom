@@ -492,6 +492,19 @@ export function AnnotationEditor({
       )}
       onMouseMove={kickToolbar}
     >
+      {/* Nút đóng luôn hiển thị: quay về màn hình trước đó (PowerPoint / bảng) */}
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={onClose}
+        className="absolute top-3 left-3 z-40 gap-1.5 shadow-lg"
+        aria-label="Đóng và quay lại"
+        title="Đóng và quay lại"
+      >
+        <X className="size-4" />
+        Quay lại
+      </Button>
+
       {/* Floating toolbar pill */}
       {!presentationMode && (
         <div
@@ -501,15 +514,6 @@ export function AnnotationEditor({
           )}
         >
           <div className="bg-card/95 backdrop-blur border rounded-full shadow-lg px-2 py-1.5 flex items-center gap-1 flex-wrap max-w-[95vw]">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onClose}
-              className="size-8 rounded-full"
-              aria-label="Đóng"
-            >
-              <X className="size-4" />
-            </Button>
             <div className="h-6 w-px bg-border" />
 
             {/* Tools */}
@@ -726,9 +730,6 @@ export function AnnotationEditor({
               <button onClick={() => setTextFontSize((s) => Math.min(64, s + 4))} className="px-1.5 hover:bg-muted rounded">A+</button>
             </span>
           )}
-          <Button variant="ghost" size="sm" className="h-7 gap-1" onClick={() => setPresentationMode(false)}>
-            <X className="size-3.5" /> Thoát
-          </Button>
         </div>
       )}
 
@@ -830,7 +831,7 @@ export function AnnotationEditor({
               "relative bg-card rounded-md shadow-sm border",
               presentationMode && "bg-white shadow-none border-none",
               canAnnotate && tool !== "pan" ? "select-none touch-none" : "",
-              "max-w-5xl",
+              "max-w-7xl",
             )}
             onPointerDown={canAnnotate || tool === "pan" ? onPointerDown : undefined}
             onPointerMove={(e) => {
@@ -857,13 +858,14 @@ export function AnnotationEditor({
               <div
                 className={cn(
                   "whitespace-pre-wrap leading-relaxed",
-                  presentationMode ? "p-10 text-neutral-900" : "p-6 text-foreground",
+                  presentationMode ? "p-10 text-neutral-900" : "text-foreground",
                 )}
                 style={{
                   fontSize: presentationMode ? `${Math.max(24, textFontSize * 1.5)}px` : `${textFontSize}px`,
                   lineHeight: 1.55,
                   minHeight: presentationMode ? undefined : "70vh",
                   minWidth: presentationMode ? "90vw" : "820px",
+                  padding: presentationMode ? undefined : "20mm",
                 }}
               >
                 {textContent || (
