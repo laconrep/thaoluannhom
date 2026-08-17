@@ -406,6 +406,7 @@ export function GroupSessionBoard({
     if (!next) return
     if (previewData) setPreviewData((p) => (p ? { ...p, session: { ...p.session, ...next } } : p))
     else setSession((s) => ({ ...s, ...next }))
+    void refreshSessionsList()
   }
 
   function handleSessionPatch(patch: Partial<SessionRow>) {
