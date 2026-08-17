@@ -819,7 +819,7 @@ export function AnnotationEditor({
         <div
           className="mx-auto"
           style={{
-            width: "fit-content",
+            width: "100%",
             transform: `scale(${zoomLevel})`,
             transformOrigin: "top center",
             transition: "transform 120ms ease-out",
@@ -831,7 +831,7 @@ export function AnnotationEditor({
               "relative bg-card rounded-md shadow-sm border",
               presentationMode && "bg-white shadow-none border-none",
               canAnnotate && tool !== "pan" ? "select-none touch-none" : "",
-              "max-w-7xl",
+              "w-full",
             )}
             onPointerDown={canAnnotate || tool === "pan" ? onPointerDown : undefined}
             onPointerMove={(e) => {
@@ -864,7 +864,7 @@ export function AnnotationEditor({
                   fontSize: presentationMode ? `${Math.max(24, textFontSize * 1.5)}px` : `${textFontSize}px`,
                   lineHeight: 1.55,
                   minHeight: presentationMode ? undefined : "70vh",
-                  minWidth: presentationMode ? "90vw" : "820px",
+                  minWidth: presentationMode ? "90vw" : "100%",
                   padding: presentationMode ? undefined : "20mm",
                 }}
               >
@@ -877,13 +877,13 @@ export function AnnotationEditor({
                 <img
                   src={currentFile.url || "/placeholder.svg"}
                   alt={currentFile.name}
-                  className="block max-w-[1200px] w-auto rounded-md pointer-events-none"
+                  className="block max-w-[1200px] w-auto rounded-md pointer-events-none mx-auto"
                   crossOrigin="anonymous"
                   style={{ transform: `rotate(${currentRotation}deg)`, maxHeight: "80vh" }}
                 />
               </div>
             ) : isPdf && currentFile ? (
-              <div className="w-[1000px] h-[78vh] relative">
+              <div className="w-[1000px] h-[78vh] relative mx-auto">
                 <iframe
                   src={currentFile.url}
                   title={currentFile.name}
@@ -899,7 +899,7 @@ export function AnnotationEditor({
                 </div>
               </div>
             ) : isOffice && currentFile ? (
-              <div className="w-[1000px] h-[78vh] relative">
+              <div className="w-[1000px] h-[78vh] relative mx-auto">
                 <iframe
                   src={officeEmbed(currentFile.url)}
                   title={currentFile.name}
