@@ -91,10 +91,16 @@ export function GroupSessionBoard({
     anns: AnnotationRow[]
   } | null>(null)
   const initRef = useRef(true)
+  const previewRef = useRef(previewData)
 
   useEffect(() => {
     setSoundOn(isSoundEnabled())
   }, [])
+
+  // Theo dõi previewData để handler realtime biết cần cập nhật state nào
+  useEffect(() => {
+    previewRef.current = previewData
+  }, [previewData])
 
   // Check if user is teacher
   useEffect(() => {
@@ -138,15 +144,25 @@ export function GroupSessionBoard({
     loadPresentation()
   }, [session.id])
 
-  // Realtime với hiệu ứng live
+  // Phiên đang được hiển thị/nghe realtime (có thể là phiên đang preview)
+  const activeSessionId = previewData?.session?.id ?? session.id
+
+  // Realtime với hiệu ứng live — theo phiên đang hiển thị, kể cả khi preview phiên khác
   useEffect(() => {
     const supabase = createClient()
     const ch = supabase
-      .channel(`sess-${session.id}`)
+      .channel(`sess-${activeSessionId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "sessions", filter: `id=eq.${session.id}` },
-        (p: any) => p.new && setSession(p.new as SessionRow),
+        { event: "*", schema: "public", table: "sessions", filter: `id=eq.${activeSessionId}` },
+        (p: any) => {
+          if (!p.new) return
+          if (previewRef.current && previewRef.current.session.id === activeSessionId) {
+            setPreviewData((cur) => (cur ? { ...cur, session: p.new as SessionRow } : cur))
+          } else {
+            setSession(p.new as SessionRow)
+          }
+        },
       )
       .on(
         "postgres_changes",
@@ -154,11 +170,26 @@ export function GroupSessionBoard({
           event: "*",
           schema: "public",
           table: "session_groups",
-          filter: `session_id=eq.${session.id}`,
+          filter: `session_id=eq.${activeSessionId}`,
         },
         (p: any) => {
           if (p.eventType === "UPDATE" && p.new) {
-            setGroups((cur) => cur.map((g) => (g.id === p.new.id ? (p.new as SessionGroupRow) : g)))
+            if (previewRef.current && previewRef.current.session.id === activeSessionId) {
+              setPreviewData((cur) =>
+                cur
+                  ? {
+                      ...cur,
+                      groups: cur.groups.map((g) =>
+                        g.id === p.new.id ? (p.new as SessionGroupRow) : g,
+                      ),
+                    }
+                  : cur,
+              )
+            } else {
+              setGroups((cur) =>
+                cur.map((g) => (g.id === p.new.id ? (p.new as SessionGroupRow) : g)),
+              )
+            }
             setLiveMap((m) => ({ ...m, [p.new.id]: Date.now() }))
           }
         },
@@ -169,21 +200,18 @@ export function GroupSessionBoard({
           event: "*",
           schema: "public",
           table: "submissions",
-          filter: `session_id=eq.${session.id}`,
+          filter: `session_id=eq.${activeSessionId}`,
         },
         (p: any) => {
           if ((p.eventType === "INSERT" || p.eventType === "UPDATE") && p.new) {
-            setSubs((cur) => {
-              const idx = cur.findIndex((x) => x.id === p.new.id)
-              if (idx >= 0) {
-                const next = cur.slice()
-                next[idx] = p.new as SubmissionRow
-                return next
-              }
-              return [...cur, p.new as SubmissionRow]
-            })
-            if (p.new.session_group_id) {
-              setLiveMap((m) => ({ ...m, [p.new.session_group_id]: Date.now() }))
+            const row = p.new as SubmissionRow
+            if (previewRef.current && previewRef.current.session.id === activeSessionId) {
+              setPreviewData((cur) => (cur ? { ...cur, subs: upsertRow(cur.subs, row) } : cur))
+            } else {
+              setSubs((cur) => upsertRow(cur, row))
+            }
+            if (row.session_group_id) {
+              setLiveMap((m) => ({ ...m, [row.session_group_id as string]: Date.now() }))
             }
             if (!initRef.current && p.eventType === "INSERT" && isSoundEnabled()) {
               sounds.newSubmission()
@@ -198,19 +226,16 @@ export function GroupSessionBoard({
           event: "*",
           schema: "public",
           table: "annotations",
-          filter: `session_id=eq.${session.id}`,
+          filter: `session_id=eq.${activeSessionId}`,
         },
         (p: any) => {
           if ((p.eventType === "INSERT" || p.eventType === "UPDATE") && p.new) {
-            setAnns((cur) => {
-              const idx = cur.findIndex((x) => x.id === p.new.id)
-              if (idx >= 0) {
-                const next = cur.slice()
-                next[idx] = p.new as AnnotationRow
-                return next
-              }
-              return [...cur, p.new as AnnotationRow]
-            })
+            const row = p.new as AnnotationRow
+            if (previewRef.current && previewRef.current.session.id === activeSessionId) {
+              setPreviewData((cur) => (cur ? { ...cur, anns: upsertRow(cur.anns, row) } : cur))
+            } else {
+              setAnns((cur) => upsertRow(cur, row))
+            }
           }
         },
       )
@@ -219,7 +244,7 @@ export function GroupSessionBoard({
     return () => {
       supabase.removeChannel(ch)
     }
-  }, [session.id])
+  }, [activeSessionId])
 
   // Xóa live indicator sau vài giây
   useEffect(() => {
@@ -1041,4 +1066,14 @@ function Slideshow({
       </button>
     </div>
   )
+}
+
+function upsertRow<T extends { id: string }>(list: T[], row: T): T[] {
+  const idx = list.findIndex((x) => x.id === row.id)
+  if (idx >= 0) {
+    const next = list.slice()
+    next[idx] = row
+    return next
+  }
+  return [...list, row]
 }
