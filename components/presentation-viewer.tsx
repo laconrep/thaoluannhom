@@ -201,10 +201,15 @@ export function PresentationViewer({
   }
 
   // Thu màn hình xổ ra: nếu phiên đang chạy hoặc đang xem/preview một phiên thì
-  // bật 8 thanh nhóm (latch, không tắt khi mở lại drawer)
+  // bật 8 thanh nhóm (latch, không tắt khi mở lại drawer).
+  // Mỗi phiên được coi là mới hoàn toàn, nên reset cả trạng thái "đã kết thúc
+  // chiếu" của phiên trước để thanh nhóm hiện lại bình thường.
   function collapseDrawer() {
     setDrawerOpen(false)
-    if (status === "running" || barsOnCollapse) setBarsVisible(true)
+    if (status === "running" || barsOnCollapse) {
+      setBarsVisible(true)
+      setProjectionEnded(false)
+    }
   }
 
   // Kết thúc phiên: chỉ tắt 8 thanh + đồng hồ nổi, phiên vẫn chạy
