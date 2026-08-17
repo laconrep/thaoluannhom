@@ -19,6 +19,7 @@ import type {
   AnnotationItem,
 } from "@/lib/types"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { AnnotationEditor } from "@/components/annotation-editor"
 import { GroupCardsGrid } from "@/components/group-card"
 import { getFiles } from "@/lib/submission-files"
@@ -46,6 +47,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   QrCode,
+  Plus,
   X,
 } from "lucide-react"
 
@@ -80,6 +82,8 @@ export function GroupSessionBoard({
   const [isTeacher, setIsTeacher] = useState(false)
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
   const [sessionsList, setSessionsList] = useState<any[] | null>(null)
+  const [createSessionOpen, setCreateSessionOpen] = useState(false)
+  const [newSessionTitle, setNewSessionTitle] = useState("")
   const [previewData, setPreviewData] = useState<{
     session: SessionRow
     groups: SessionGroupRow[]
@@ -266,15 +270,64 @@ export function GroupSessionBoard({
   async function openSessionPicker() {
     setSessionPickerOpen(true)
     if (sessionsList === null) {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from("sessions")
-        .select("id, title, kind, status, duration_seconds, created_at")
-        .eq("class_id", classId)
-        .eq("kind", "group")
-        .order("created_at", { ascending: false })
-      setSessionsList(data ?? [])
+      await refreshSessionsList()
     }
+  }
+
+  async function refreshSessionsList() {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from("sessions")
+      .select("id, title, kind, status, duration_seconds, created_at")
+      .eq("class_id", classId)
+      .eq("kind", "group")
+    const rows = data ?? []
+    rows.sort((a: any, b: any) => {
+      const aOpen = a.status !== "idle" ? 1 : 0
+      const bOpen = b.status !== "idle" ? 1 : 0
+      if (aOpen !== bOpen) return aOpen - bOpen
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    })
+    setSessionsList(rows)
+  }
+
+  async function handleCreateSession() {
+    const title = newSessionTitle.trim() || "Thảo luận mới"
+    const supabase = createClient()
+    const { data: session, error } = await supabase
+      .from("sessions")
+      .insert({
+        class_id: classId,
+        title,
+        kind: "group",
+        duration_seconds: 300,
+        use_fixed_groups: true,
+      })
+      .select()
+      .single()
+    if (error || !session) {
+      toast.error(error?.message ?? "Không tạo được phiên")
+      return
+    }
+    const { data: cgs } = await supabase
+      .from("class_groups")
+      .select("id, group_number, label, name")
+      .eq("class_id", classId)
+      .order("group_number")
+    if (cgs) {
+      await supabase.from("session_groups").insert(
+        cgs.map((g: any) => ({
+          session_id: session.id,
+          class_group_id: g.id,
+          group_number: g.group_number,
+          label: g.name ?? g.label,
+        })),
+      )
+    }
+    setCreateSessionOpen(false)
+    setNewSessionTitle("")
+    await refreshSessionsList()
+    toast.success("Đã tạo phiên thảo luận mới", { duration: 1500 })
   }
 
   async function loadSessionPreview(sid: string) {
@@ -441,38 +494,74 @@ export function GroupSessionBoard({
 
           {embedded && sessionPickerOpen && (
             <div className="flex flex-col gap-1.5 border rounded-lg bg-background p-2">
-              <p className="text-xs font-semibold text-muted-foreground">Chọn phiên thảo luận</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-muted-foreground">Chọn phiên thảo luận</p>
+                <Button variant="outline" size="sm" className="gap-1 text-xs px-2 h-7" onClick={() => setCreateSessionOpen(true)}>
+                  <Plus className="size-3" aria-hidden="true" />
+                  Tạo phiên mới
+                </Button>
+              </div>
               {sessionsList === null ? (
                 <p className="text-xs text-muted-foreground">Đang tải...</p>
               ) : (
-                sessionsList.map((s) => {
-                  const isCurrent = s.id === displaySession.id
-                  const isPreview = s.id !== session.id && s.id === previewData?.session.id
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => loadSessionPreview(s.id)}
-                      className={`w-full text-left rounded-md border p-1.5 text-xs transition ${
-                        isCurrent
-                          ? "border-primary bg-primary/10 font-semibold"
-                          : "border-border bg-card hover:bg-muted/40"
-                      }`}
-                    >
-                      <span className="block font-medium leading-tight line-clamp-2">
-                        {s.title}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {s.status === "running"
-                          ? "Đang chạy"
-                          : s.status === "ended"
-                            ? "Đã kết thúc"
-                            : "Chưa bắt đầu"}
-                        {isPreview ? " · Đang xem" : isCurrent ? " · Phiên hiện tại" : ""}
-                      </span>
-                    </button>
-                  )
-                })
+                <div className="flex flex-col gap-1.5 overflow-y-auto no-scrollbar max-h-[5.5rem]">
+                  {sessionsList.map((s) => {
+                    const isCurrent = s.id === displaySession.id
+                    const isPreview = s.id !== session.id && s.id === previewData?.session.id
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => loadSessionPreview(s.id)}
+                        className={`w-full text-left rounded-md border p-1.5 text-xs transition ${
+                          isCurrent
+                            ? "border-primary bg-primary/10 font-semibold"
+                            : "border-border bg-card hover:bg-muted/40"
+                        }`}
+                      >
+                        <span className="block font-medium leading-tight line-clamp-2">
+                          {s.title}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {s.status === "running"
+                            ? "Đang chạy"
+                            : s.status === "ended"
+                              ? "Đã kết thúc"
+                              : "Chưa bắt đầu"}
+                          {isPreview ? " · Đang xem" : isCurrent ? " · Phiên hiện tại" : ""}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {createSessionOpen && (
+                <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50" onClick={() => setCreateSessionOpen(false)}>
+                  <div
+                    className="w-[min(360px,90vw)] rounded-xl bg-background p-4 flex flex-col gap-3 shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <p className="text-sm font-heading font-semibold">Tạo phiên thảo luận mới</p>
+                    <Input
+                      autoFocus
+                      value={newSessionTitle}
+                      onChange={(e) => setNewSessionTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleCreateSession()
+                      }}
+                      placeholder="Nhập tên phiên thảo luận"
+                      className="w-full"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setCreateSessionOpen(false)}>
+                        Hủy
+                      </Button>
+                      <Button size="sm" onClick={handleCreateSession}>
+                        Tạo
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           )}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { ChevronRight, Download, Link as LinkIcon, Presentation, QrCode, X } from "lucide-react"
+import { ChevronLeft, Download, Link as LinkIcon, Presentation, QrCode, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { QRCodeSVG } from "qrcode.react"
@@ -62,6 +62,7 @@ export function PresentationViewer({
   const [openGroupId, setOpenGroupId] = useState<string | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null)
   const [hoverTimer, setHoverTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
+  const [closeTimer, setCloseTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
   const [barsVisible, setBarsVisible] = useState(false)
   const [projectionEnded, setProjectionEnded] = useState(false)
   const supabase = useMemo(() => createClient(), [])
@@ -279,9 +280,10 @@ export function PresentationViewer({
           {/* Left hover zone */}
           <div
             className="absolute left-0 top-0 bottom-0 w-6 z-10"
-            onMouseEnter={() =>
-              setHoverTimer(setTimeout(() => setDrawerOpen(true), 2000))
-            }
+            onMouseEnter={() => {
+              if (closeTimer) clearTimeout(closeTimer)
+              setHoverTimer(setTimeout(() => setDrawerOpen(true), 1500))
+            }}
             onMouseLeave={() => {
               if (hoverTimer) clearTimeout(hoverTimer)
             }}
@@ -292,6 +294,13 @@ export function PresentationViewer({
             className={`absolute left-0 top-0 bottom-0 z-20 w-[min(880px,92vw)] bg-background text-foreground shadow-2xl transition-transform duration-300 flex flex-col ${
               drawerOpen ? "translate-x-0" : "-translate-x-full"
             }`}
+            onMouseEnter={() => {
+              if (closeTimer) clearTimeout(closeTimer)
+            }}
+            onMouseLeave={() => {
+              if (hoverTimer) clearTimeout(hoverTimer)
+              setCloseTimer(setTimeout(() => collapseDrawer(), 1000))
+            }}
           >
             <div className="flex items-center gap-2 border-b p-3">
               <strong>Giao việc cho nhóm</strong>
@@ -311,9 +320,10 @@ export function PresentationViewer({
                 type="button"
                 onClick={collapseDrawer}
                 aria-label="Thu gọn bảng nhóm"
+                title="Thu màn hình"
                 className="ml-auto rounded p-1.5 hover:bg-muted"
               >
-                <ChevronRight className="size-5" />
+                <ChevronLeft className="size-5" />
               </button>
             </div>
             <div className="flex-1 overflow-auto">
