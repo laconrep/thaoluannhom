@@ -84,6 +84,7 @@ export function GroupSessionBoard({
   const [sessionsList, setSessionsList] = useState<any[] | null>(null)
   const [createSessionOpen, setCreateSessionOpen] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState("")
+  const [createTitleError, setCreateTitleError] = useState<string | null>(null)
   const [previewData, setPreviewData] = useState<{
     session: SessionRow
     groups: SessionGroupRow[]
@@ -318,6 +319,13 @@ export function GroupSessionBoard({
 
   async function handleCreateSession() {
     const title = newSessionTitle.trim() || "Thảo luận mới"
+    if (
+      sessionsList?.some((s) => s.title?.trim().toLowerCase() === title.toLowerCase())
+    ) {
+      setCreateTitleError("Trùng tên phiên thảo luận")
+      return
+    }
+    setCreateTitleError(null)
     const supabase = createClient()
     const { data: session, error } = await supabase
       .from("sessions")
@@ -351,6 +359,7 @@ export function GroupSessionBoard({
     }
     setCreateSessionOpen(false)
     setNewSessionTitle("")
+    setCreateTitleError(null)
     await refreshSessionsList()
     toast.success("Đã tạo phiên thảo luận mới", { duration: 1500 })
   }
@@ -522,7 +531,10 @@ export function GroupSessionBoard({
             <div className="flex flex-col gap-1.5 border rounded-lg bg-background p-2">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-semibold text-muted-foreground">Chọn phiên thảo luận</p>
-                <Button variant="outline" size="sm" className="gap-1 text-xs px-2 h-7" onClick={() => setCreateSessionOpen(true)}>
+                <Button variant="outline" size="sm" className="gap-1 text-xs px-2 h-7" onClick={() => {
+                  setCreateTitleError(null)
+                  setCreateSessionOpen(true)
+                }}>
                   <Plus className="size-3" aria-hidden="true" />
                   Tạo phiên mới
                 </Button>
@@ -562,7 +574,10 @@ export function GroupSessionBoard({
                 </div>
               )}
               {createSessionOpen && (
-                <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50" onClick={() => setCreateSessionOpen(false)}>
+                <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50" onClick={() => {
+                  setCreateTitleError(null)
+                  setCreateSessionOpen(false)
+                }}>
                   <div
                     className="w-[min(360px,90vw)] rounded-xl bg-background p-4 flex flex-col gap-3 shadow-2xl"
                     onClick={(e) => e.stopPropagation()}
@@ -571,7 +586,10 @@ export function GroupSessionBoard({
                     <Input
                       autoFocus
                       value={newSessionTitle}
-                      onChange={(e) => setNewSessionTitle(e.target.value)}
+                      onChange={(e) => {
+                        setNewSessionTitle(e.target.value)
+                        if (createTitleError) setCreateTitleError(null)
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleCreateSession()
                       }}
@@ -579,13 +597,19 @@ export function GroupSessionBoard({
                       className="w-full"
                     />
                     <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setCreateSessionOpen(false)}>
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setCreateTitleError(null)
+                        setCreateSessionOpen(false)
+                      }}>
                         Hủy
                       </Button>
                       <Button size="sm" onClick={handleCreateSession}>
                         Tạo
                       </Button>
                     </div>
+                    {createTitleError && (
+                      <p className="text-xs text-destructive font-medium">{createTitleError}</p>
+                    )}
                   </div>
                 </div>
               )}
