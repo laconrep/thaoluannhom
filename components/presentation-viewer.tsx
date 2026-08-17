@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { ChevronRight, Download, Link as LinkIcon, Presentation, QrCode, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -138,6 +138,17 @@ export function PresentationViewer({
     return () => window.removeEventListener("presentation-start", start)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presentationId])
+
+  // Khi mở lại phiên (ended -> running): reset trạng thái chiếu để đồng hồ nổi
+  // và 8 thanh nhóm hoạt động lại như khi bấm "Bắt đầu"
+  const prevStatusRef = useRef(status)
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    prevStatusRef.current = status
+    if (prev === "ended" && status === "running") {
+      setProjectionEnded(false)
+    }
+  }, [status])
 
   const subsByGroup = useMemo(() => {
     const m: Record<string, SubmissionRow> = {}
