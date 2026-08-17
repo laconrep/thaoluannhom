@@ -25,11 +25,8 @@ import {
   Presentation,
   File as FileIcon,
   Download,
-  Maximize2,
-  Minimize2,
   ZoomIn,
   ZoomOut,
-  Maximize,
   Stamp,
   Hand,
   PresentationIcon,
@@ -70,6 +67,7 @@ export function AnnotationEditor({
   initialData,
   initialScore,
   maxScore = 10,
+  autoFullscreen = false,
   onSave,
   onClose,
 }: {
@@ -79,6 +77,7 @@ export function AnnotationEditor({
   initialData: AnnotationItem[]
   initialScore: number | null
   maxScore?: number
+  autoFullscreen?: boolean
   onSave: (data: AnnotationItem[], score: number | null) => Promise<void> | void
   onClose: () => void
 }) {
@@ -120,7 +119,26 @@ export function AnnotationEditor({
     scrollY: 0,
   })
 
-  const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(rootRef)
+  const { isFullscreen, enter, exit, toggle: toggleFullscreen } = useFullscreen(rootRef)
+
+  // Tự vào fullscreen khi mở (đúng ý GV: click nhóm → báo cáo full màn hình ngay).
+  // Tránh gọi khi đã đang fullscreen sẵn (ví dụ nổi trên PowerPoint đang full) —
+  // trình duyệt chỉ cho 1 phần tử fullscreen nên bỏ qua để khỏi phá trạng thái của PowerPoint.
+  useEffect(() => {
+    if (autoFullscreen && !document.fullscreenElement) {
+      enter().catch(() => undefined)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Đóng editor: thoát fullscreen riêng của editor rồi mới gọi onClose để trả lại
+  // fullscreen của PowerPoint (đang full phía dưới) đúng như mong đợi.
+  function handleClose() {
+    if (isFullscreen) {
+      exit().catch(() => undefined)
+    }
+    onClose()
+  }
 
   const currentFile = currentIdx >= 0 ? files[currentIdx] : null
   const currentRotation = currentIdx >= 0 ? rotations[currentIdx] ?? 0 : 0
@@ -448,7 +466,6 @@ export function AnnotationEditor({
       if (e.key === "ArrowLeft" && files.length > 1) setCurrentIdx((i) => Math.max(0, i - 1))
       if (e.key === "ArrowRight" && files.length > 1)
         setCurrentIdx((i) => Math.min(files.length - 1, i + 1))
-      if (e.key === "f" || e.key === "F") toggleFullscreen()
       if (e.key === "0") setZoomLevel(1)
       if (e.key === "+" || e.key === "=") setZoomLevel((z) => Math.min(3, z + 0.25))
       if (e.key === "-") setZoomLevel((z) => Math.max(0.5, z - 0.25))
@@ -496,7 +513,7 @@ export function AnnotationEditor({
       <Button
         variant="secondary"
         size="sm"
-        onClick={onClose}
+        onClick={handleClose}
         className="absolute top-3 left-3 z-40 gap-1.5 shadow-lg"
         aria-label="Đóng và quay lại"
         title="Đóng và quay lại"
@@ -645,16 +662,6 @@ export function AnnotationEditor({
               title="Chế độ trình chiếu"
             >
               <PresentationIcon className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleFullscreen}
-              className="size-8 rounded-full"
-              aria-label="Toàn màn hình (F)"
-              title="Toàn màn hình"
-            >
-              {isFullscreen ? <Minimize2 className="size-4" /> : <Maximize className="size-4" />}
             </Button>
 
             <div className="h-6 w-px bg-border" />
@@ -1078,7 +1085,7 @@ export function AnnotationEditor({
       {/* Hint góc phải phím tắt */}
       {!presentationMode && isFullscreen && (
         <div className="absolute bottom-3 right-3 z-20 bg-card/80 backdrop-blur text-xs text-muted-foreground px-2.5 py-1 rounded border">
-          <kbd className="font-mono">F</kbd> toàn màn hình · <kbd className="font-mono">+/-</kbd> zoom · <kbd className="font-mono">P</kbd> trình chiếu · <kbd className="font-mono">Esc</kbd> thoát
+          <kbd className="font-mono">+/-</kbd> zoom · <kbd className="font-mono">P</kbd> trình chiếu · <kbd className="font-mono">Esc</kbd> thoát
         </div>
       )}
     </div>

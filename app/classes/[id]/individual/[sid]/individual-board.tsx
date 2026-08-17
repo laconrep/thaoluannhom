@@ -313,6 +313,7 @@ export function IndividualBoard({
           textContent={openSub?.text_content ?? null}
           initialData={(openAnn?.data ?? []) as AnnotationItem[]}
           initialScore={openAnn?.score ?? null}
+          autoFullscreen
           onSave={async (data, score) => {
             await saveAnnotationAction({
               sessionId: session.id,
