@@ -391,10 +391,16 @@ export function PresentationViewer({
             </div>
             {/* Kết thúc phiên: tắt 8 thanh nhóm + đồng hồ nổi, phiên vẫn chạy */}
             <div className="border-t p-2">
-              <Button variant="destructive" size="sm" className="w-full gap-1" onClick={endProjection}>
-                <X className="size-3.5" aria-hidden="true" />
-                Kết thúc phiên
-              </Button>
+              {projectionEnded ? (
+                <p className="w-full text-center text-xs font-medium text-muted-foreground">
+                  Đã kết thúc phiên
+                </p>
+              ) : (
+                <Button variant="destructive" size="sm" className="w-full gap-1" onClick={endProjection}>
+                  <X className="size-3.5" aria-hidden="true" />
+                  Kết thúc phiên
+                </Button>
+              )}
             </div>
           </div>
 
