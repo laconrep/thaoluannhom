@@ -164,13 +164,15 @@ export function PresentationViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presentationId])
 
-  // Khi mở lại phiên (ended -> running): reset trạng thái chiếu để đồng hồ nổi
-  // và 8 thanh nhóm hoạt động lại như khi bấm "Bắt đầu"
+  // Khi phiên bắt đầu chạy (từ bất kỳ trạng thái nào: idle/ended -> running):
+  // reset trạng thái chiếu để đồng hồ nổi và 8 thanh nhóm hoạt động lại như khi
+  // bấm "Bắt đầu". Trước đây chỉ reset cho ended -> running nên phiên mới (idle
+  // -> running) vẫn giữ projectionEnded từ phiên cũ và 8 thanh không hiện.
   const prevStatusRef = useRef(status)
   useEffect(() => {
     const prev = prevStatusRef.current
     prevStatusRef.current = status
-    if (prev === "ended" && status === "running") {
+    if (prev !== "running" && status === "running") {
       setProjectionEnded(false)
     }
   }, [status])
@@ -178,6 +180,8 @@ export function PresentationViewer({
   // Bật 8 thanh nhóm bất cứ khi nào drawer đóng và phiên đang chạy (hoặc đang
   // preview) mà chưa kết thúc chiếu. Không phụ thuộc thời điểm click thu drawer:
   // nếu status cập nhật sau khi collapse, effect này vẫn latch thanh lên.
+  // Giữ guard !projectionEnded để không khôi phục lại trạng thái sau khi GV
+  // bấm "Kết thúc phiên".
   useEffect(() => {
     if (!drawerOpen && (status === "running" || barsOnCollapse) && !projectionEnded) {
       setBarsVisible(true)
@@ -233,13 +237,12 @@ export function PresentationViewer({
 
   // Thu màn hình xổ ra: nếu phiên đang chạy hoặc đang xem/preview một phiên thì
   // bật 8 thanh nhóm (latch, không tắt khi mở lại drawer).
-  // Mỗi phiên được coi là mới hoàn toàn, nên reset cả trạng thái "đã kết thúc
-  // chiếu" của phiên trước để thanh nhóm hiện lại bình thường.
+  // projectionEnded chỉ được reset khi phiên bắt đầu chạy (xem effect phía trên),
+  // nên nút "Kết thúc phiên" không bị khôi phục lại khi thu drawer.
   function collapseDrawer() {
     setDrawerOpen(false)
     if (status === "running" || barsOnCollapse) {
       setBarsVisible(true)
-      setProjectionEnded(false)
     }
   }
 
