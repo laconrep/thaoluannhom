@@ -178,15 +178,15 @@ export function PresentationViewer({
   }, [status])
 
   // Bật 8 thanh nhóm bất cứ khi nào drawer đóng và phiên đang chạy (hoặc đang
-  // preview). Reset luôn projectionEnded vì mỗi phiên được coi là mới hoàn toàn.
-  // Không phụ thuộc thời điểm click thu drawer: nếu status cập nhật sau khi
-  // collapse, effect này vẫn latch thanh lên.
+  // preview) mà chưa kết thúc chiếu. Không phụ thuộc thời điểm click thu drawer:
+  // nếu status cập nhật sau khi collapse, effect này vẫn latch thanh lên.
+  // Giữ guard !projectionEnded để không khôi phục lại trạng thái sau khi GV
+  // bấm "Kết thúc phiên".
   useEffect(() => {
-    if (!drawerOpen && (status === "running" || barsOnCollapse)) {
+    if (!drawerOpen && (status === "running" || barsOnCollapse) && !projectionEnded) {
       setBarsVisible(true)
-      setProjectionEnded(false)
     }
-  }, [drawerOpen, status, barsOnCollapse])
+  }, [drawerOpen, status, barsOnCollapse, projectionEnded])
 
   const subsByGroup = useMemo(() => {
     const m: Record<string, SubmissionRow> = {}
@@ -237,13 +237,12 @@ export function PresentationViewer({
 
   // Thu màn hình xổ ra: nếu phiên đang chạy hoặc đang xem/preview một phiên thì
   // bật 8 thanh nhóm (latch, không tắt khi mở lại drawer).
-  // Mỗi phiên được coi là mới hoàn toàn, nên reset cả trạng thái "đã kết thúc
-  // chiếu" của phiên trước để thanh nhóm hiện lại bình thường.
+  // projectionEnded chỉ được reset khi phiên bắt đầu chạy (xem effect phía trên),
+  // nên nút "Kết thúc phiên" không bị khôi phục lại khi thu drawer.
   function collapseDrawer() {
     setDrawerOpen(false)
     if (status === "running" || barsOnCollapse) {
       setBarsVisible(true)
-      setProjectionEnded(false)
     }
   }
 
