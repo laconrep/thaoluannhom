@@ -442,7 +442,7 @@ export function PresentationViewer({
 
           {/* Thanh nhóm bên trái (nhóm 1-4) */}
           {barsVisible && !projectionEnded && (
-            <div className="absolute inset-y-0 left-6 z-20 flex w-[2.5vw] flex-col justify-center gap-1 py-8">
+            <div className="absolute inset-y-0 left-6 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8">
               {orderedGroups.slice(0, 4).map((number) => {
                 const group = groups.find((item) => item.group_number === number)
                 const label = group?.label ?? `Nhóm ${number}`
@@ -452,10 +452,10 @@ export function PresentationViewer({
                     key={number}
                     onClick={() => openGroup(number)}
                     title={`${label}${submitted ? " - Đã nộp" : " - Chưa nộp"}`}
-                    className={`h-[3.333vh] w-full rounded-r text-[8px] leading-[1.1] break-words text-center transition-colors ${
+                    className={`h-[4vh] w-full rounded-r text-[9.6px] leading-[1.1] break-words text-center transition-colors ${
                       submitted
                         ? "bg-primary text-primary-foreground font-bold"
-                        : "bg-white/15 text-white/80 border border-white/20 hover:bg-white/25"
+                        : "bg-neutral-300/70 text-black border border-black/10 hover:bg-neutral-200/80"
                     }`}
                   >
                     {label}
@@ -467,7 +467,7 @@ export function PresentationViewer({
 
           {/* Thanh nhóm bên phải (nhóm 5-8) */}
           {barsVisible && !projectionEnded && (
-            <div className="absolute inset-y-0 right-0 z-20 flex w-[2.5vw] flex-col justify-center gap-1 py-8">
+            <div className="absolute inset-y-0 right-0 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8">
               {orderedGroups.slice(4, 8).map((number) => {
                 const group = groups.find((item) => item.group_number === number)
                 const label = group?.label ?? `Nhóm ${number}`
@@ -477,10 +477,10 @@ export function PresentationViewer({
                     key={number}
                     onClick={() => openGroup(number)}
                     title={`${label}${submitted ? " - Đã nộp" : " - Chưa nộp"}`}
-                    className={`h-[3.333vh] w-full rounded-l text-[8px] leading-[1.1] break-words text-center transition-colors ${
+                    className={`h-[4vh] w-full rounded-l text-[9.6px] leading-[1.1] break-words text-center transition-colors ${
                       submitted
                         ? "bg-primary text-primary-foreground font-bold"
-                        : "bg-white/15 text-white/80 border border-white/20 hover:bg-white/25"
+                        : "bg-neutral-300/70 text-black border border-black/10 hover:bg-neutral-200/80"
                     }`}
                   >
                     {label}
