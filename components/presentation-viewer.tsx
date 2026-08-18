@@ -87,21 +87,20 @@ export function PresentationViewer({
     load()
   }, [presentationId, supabase, isTeacher])
 
-  // Tự động tạo mới signed URL định kỳ để tránh hết hạn (URL cũ chỉ sống 1 giờ,
-  // khiến Office Online Viewer chỉ hiện logo mặc định khi token hết hạn giữa buổi học).
+  // Tạo signed URL 24h một lần để Office Online Viewer tải được file cả buổi học
   useEffect(() => {
     const storagePath = presentation?.storage_path ?? presentation?.file_path
     if (!storagePath) return
 
     let cancelled = false
 
-    const refreshSignedUrl = async () => {
+    const createSignedUrl = async () => {
       const { data: signed, error } = await supabase.storage
         .from("presentations")
         .createSignedUrl(storagePath, 60 * 60 * 24) // 24 giờ, đủ dài cho một buổi học
       if (cancelled) return
       if (error) {
-        console.error("Không làm mới được signed URL cho presentation:", error)
+        console.error("Không tạo được signed URL cho presentation:", error)
         return
       }
       if (signed?.signedUrl) {
@@ -112,13 +111,10 @@ export function PresentationViewer({
       }
     }
 
-    refreshSignedUrl()
-    // Làm mới trước khi hết hạn khá lâu để không bao giờ bị lộ khoảng trống hết token
-    const interval = window.setInterval(refreshSignedUrl, 45 * 60 * 1000) // mỗi 45 phút
+    createSignedUrl()
 
     return () => {
       cancelled = true
-      window.clearInterval(interval)
     }
   }, [presentation?.storage_path, presentation?.file_path, supabase])
 
