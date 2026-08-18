@@ -175,6 +175,15 @@ export function PresentationViewer({
     }
   }, [status])
 
+  // Bật 8 thanh nhóm bất cứ khi nào drawer đóng và phiên đang chạy (hoặc đang
+  // preview) mà chưa kết thúc chiếu. Không phụ thuộc thời điểm click thu drawer:
+  // nếu status cập nhật sau khi collapse, effect này vẫn latch thanh lên.
+  useEffect(() => {
+    if (!drawerOpen && (status === "running" || barsOnCollapse) && !projectionEnded) {
+      setBarsVisible(true)
+    }
+  }, [drawerOpen, status, barsOnCollapse, projectionEnded])
+
   const subsByGroup = useMemo(() => {
     const m: Record<string, SubmissionRow> = {}
     for (const s of submissions) if (s.session_group_id) m[s.session_group_id] = s
