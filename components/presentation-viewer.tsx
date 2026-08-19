@@ -188,7 +188,6 @@ export function PresentationViewer({
     setShowQr(false)
     setOpenGroupId(null)
     setBarsVisible(false)
-    setProjectionEnded(false)
     const p = document.exitFullscreen?.()
     if (p) p.catch(() => undefined)
     supabase
@@ -254,8 +253,8 @@ export function PresentationViewer({
         </div>
       )}
 
-      {/* Đồng hồ phiên nổi góc phải */}
-      {status !== "idle" && !projectionEnded && (
+      {/* Đồng hồ phiên nổi góc phải — chỉ hiện khi phiên đang chạy */}
+      {status === "running" && !projectionEnded && (
         <div
           className="absolute right-4 top-16 z-30 flex items-center justify-center rounded-full border-4 border-green-500 bg-transparent font-mono text-red-500 font-bold tabular-nums"
           style={{ width: "min(5vw, 5vh)", height: "min(5vw, 5vh)", fontSize: "min(1.4vw, 1.4vh)" }}
@@ -355,13 +354,15 @@ export function PresentationViewer({
                 </>
               )}
             </div>
-            {/* Kết thúc phiên: tắt 8 thanh nhóm + đồng hồ nổi, phiên vẫn chạy */}
-            <div className="border-t p-2">
-              <Button variant="destructive" size="sm" className="w-full gap-1" onClick={endProjection}>
-                <X className="size-3.5" aria-hidden="true" />
-                Kết thúc phiên
-              </Button>
-            </div>
+            {/* Kết thúc phiên: chỉ hiện khi phiên đang chạy và chưa kết thúc chiếu */}
+            {status === "running" && !projectionEnded && (
+              <div className="border-t p-2">
+                <Button variant="destructive" size="sm" className="w-full gap-1" onClick={endProjection}>
+                  <X className="size-3.5" aria-hidden="true" />
+                  Kết thúc phiên
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* QR modal */}
@@ -393,7 +394,7 @@ export function PresentationViewer({
           )}
 
           {/* Thanh nhóm bên trái (nhóm 1-4) */}
-          {barsVisible && !projectionEnded && (
+          {status === "running" && barsVisible && !projectionEnded && (
             <div className="absolute inset-y-0 left-6 z-20 flex w-[2.5vw] flex-col justify-center gap-1 py-8">
               {orderedGroups.slice(0, 4).map((number) => {
                 const group = groups.find((item) => item.group_number === number)
@@ -418,7 +419,7 @@ export function PresentationViewer({
           )}
 
           {/* Thanh nhóm bên phải (nhóm 5-8) */}
-          {barsVisible && !projectionEnded && (
+          {status === "running" && barsVisible && !projectionEnded && (
             <div className="absolute inset-y-0 right-0 z-20 flex w-[2.5vw] flex-col justify-center gap-1 py-8">
               {orderedGroups.slice(4, 8).map((number) => {
                 const group = groups.find((item) => item.group_number === number)
