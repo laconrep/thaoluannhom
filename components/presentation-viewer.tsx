@@ -2,7 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { ChevronLeft, Download, Link as LinkIcon, Presentation, QrCode, X } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Link as LinkIcon,
+  Presentation,
+  QrCode,
+  X,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { QRCodeSVG } from "qrcode.react"
@@ -277,6 +285,23 @@ export function PresentationViewer({
     }
   }
 
+  function openDrawer() {
+    clearHoverTimer()
+    clearCloseTimer()
+    setDrawerOpen(true)
+  }
+
+  // Nếu nhóm đang mở biến mất khỏi danh sách (vd: chuyển phiên giữa chừng,
+  // hoặc danh sách nhóm cập nhật sau khi HS đổi nhóm), editor sẽ unmount mà
+  // không chạy onClose khiến openGroupId kẹt vĩnh viễn — vừa chặn mở lại
+  // drawer, vừa làm UI "treo". Reset openGroupId để khôi phục.
+  useEffect(() => {
+    if (openGroupId && !groups.some((g) => g.id === openGroupId)) {
+      drawerStateBeforeEditorRef.current = null
+      setOpenGroupId(null)
+    }
+  }, [openGroupId, groups])
+
   // Kết thúc phiên: tắt 8 thanh + đồng hồ nổi VÀ kết thúc phiên hoàn toàn trong
   // DB (status = ended). Trước đây chỉ tắt cục bộ nên khi mở lại trình chiếu,
   // phiên vẫn còn "running" khiến nút + thanh nhóm tự hiện trở lại.
@@ -367,17 +392,31 @@ export function PresentationViewer({
         <>
           {/* Left hover zone */}
           <div
-            className="absolute left-0 top-0 bottom-0 w-6 z-10"
+            className="absolute left-0 top-0 bottom-0 w-10 z-10"
             onMouseEnter={() => {
               if (openGroupId) return
               clearCloseTimer()
               clearHoverTimer()
-              hoverTimerRef.current = setTimeout(() => setDrawerOpen(true), 1500)
+              hoverTimerRef.current = setTimeout(() => setDrawerOpen(true), 600)
             }}
             onMouseLeave={() => {
               clearHoverTimer()
             }}
+            onClick={openDrawer}
           />
+
+          {/* Tay cầm mở lại drawer khi thu gọn (chỉ khi thanh nhóm không hiện) */}
+          {!drawerOpen && !barsVisible && status !== "ended" && (
+            <button
+              type="button"
+              onClick={openDrawer}
+              aria-label="Mở bảng nhóm"
+              title="Mở bảng nhóm"
+              className="absolute left-0 top-1/2 z-10 flex -translate-y-1/2 items-center rounded-r-md border border-l-0 bg-background/80 p-1.5 text-foreground shadow-md hover:bg-background"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          )}
 
           {/* Drawer: giao việc cho nhóm + thẻ nhóm đầy đủ */}
           <div
@@ -389,7 +428,7 @@ export function PresentationViewer({
             }}
             onMouseLeave={() => {
               clearHoverTimer()
-              if (openGroupId) return
+              if (openGroupId || showQr) return
               clearCloseTimer()
               closeTimerRef.current = setTimeout(() => collapseDrawer(), 1000)
             }}
@@ -496,7 +535,13 @@ export function PresentationViewer({
 
           {/* Thanh nhóm bên trái (nhóm 1-4) */}
           {(status === "running" || barsOnCollapse) && barsVisible && !projectionEnded && (
-            <div className="absolute inset-y-0 left-6 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8">
+            <div
+              className="absolute inset-y-0 left-6 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8"
+              onMouseEnter={() => {
+                clearCloseTimer()
+                if (!drawerOpen) setDrawerOpen(true)
+              }}
+            >
               {orderedGroups.slice(0, 4).map((number) => {
                 const group = groups.find((item) => item.group_number === number)
                 const label = group?.label ?? `Nhóm ${number}`
@@ -521,7 +566,13 @@ export function PresentationViewer({
 
           {/* Thanh nhóm bên phải (nhóm 5-8) */}
           {(status === "running" || barsOnCollapse) && barsVisible && !projectionEnded && (
-            <div className="absolute inset-y-0 right-0 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8">
+            <div
+              className="absolute inset-y-0 right-0 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8"
+              onMouseEnter={() => {
+                clearCloseTimer()
+                if (!drawerOpen) setDrawerOpen(true)
+              }}
+            >
               {orderedGroups.slice(4, 8).map((number) => {
                 const group = groups.find((item) => item.group_number === number)
                 const label = group?.label ?? `Nhóm ${number}`
