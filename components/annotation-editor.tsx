@@ -39,11 +39,11 @@ const COLORS = [
   { name: "Đen", value: "#111827" },
 ]
 
-const STAMPS: { label: string; color: string }[] = [
-  { label: "✓ Tốt", color: "#16a34a" },
-  { label: "★ Xuất sắc", color: "#ca8a04" },
-  { label: "⚠ Xem lại", color: "#ea580c" },
-  { label: "✗ Sai", color: "#dc2626" },
+const STAMPS: { mark: string; label: string; color: string }[] = [
+  { mark: "✓", label: "Tốt", color: "#16a34a" },
+  { mark: "★", label: "Xuất sắc", color: "#ca8a04" },
+  { mark: "⚠", label: "Xem lại", color: "#ea580c" },
+  { mark: "✗", label: "Sai", color: "#dc2626" },
 ]
 
 type Tool = "pen" | "highlight" | "underline" | "text" | "stamp" | "pan"
@@ -103,7 +103,7 @@ export function AnnotationEditor({
   const [selectedTextIdx, setSelectedTextIdx] = useState<number | null>(null)
   const [presentationMode, setPresentationMode] = useState(false)
   const [textFontSize, setTextFontSize] = useState(18) // dành cho presentation chữ to
-  const [zoomLevel, setZoomLevel] = useState(1) // 0.5 → 3
+  const [zoomLevel, setZoomLevel] = useState(1) // 0.5 → 10
   const [showToolbar, setShowToolbar] = useState(true)
   const toolbarHideTimer = useRef<any>(null)
 
@@ -228,11 +228,11 @@ export function AnnotationEditor({
         ...cur,
         {
           kind: "stamp",
-          label: stamp.label,
+          label: stamp.mark,
           color: stamp.color,
           x,
           y,
-          fontSize: 28,
+          fontSize: 22,
           fileIndex: annotationKey,
         },
       ])
@@ -397,6 +397,11 @@ export function AnnotationEditor({
     setSelectedTextIdx(null)
   }
 
+  function removeStamp(origIdx: number) {
+    pushHistory()
+    setItems((cur) => cur.filter((_, i) => i !== origIdx))
+  }
+
   function changeFontSelected(delta: number) {
     if (selectedTextIdx === null) return
     pushHistory()
@@ -436,7 +441,7 @@ export function AnnotationEditor({
       if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
       setZoomLevel((z) => {
-        const next = Math.max(0.5, Math.min(3, z - e.deltaY / 500))
+        const next = Math.max(0.5, Math.min(10, z - e.deltaY / 500))
         return Math.round(next * 100) / 100
       })
     }
@@ -466,7 +471,7 @@ export function AnnotationEditor({
       if (e.key === "ArrowRight" && files.length > 1)
         setCurrentIdx((i) => Math.min(files.length - 1, i + 1))
       if (e.key === "0") setZoomLevel(1)
-      if (e.key === "+" || e.key === "=") setZoomLevel((z) => Math.min(3, z + 0.25))
+      if (e.key === "+" || e.key === "=") setZoomLevel((z) => Math.min(10, z + 0.25))
       if (e.key === "-") setZoomLevel((z) => Math.max(0.5, z - 0.25))
     }
     window.addEventListener("keydown", onKey)
@@ -528,8 +533,18 @@ export function AnnotationEditor({
             showToolbar ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4 pointer-events-none",
           )}
         >
-          <div className="bg-card/95 backdrop-blur border rounded-full shadow-lg px-2 py-1.5 flex items-center gap-1 flex-wrap max-w-[95vw]">
-            <div className="h-6 w-px bg-border" />
+          <div className="bg-card/95 backdrop-blur border rounded-lg shadow-md px-1.5 py-1 flex items-center gap-1 flex-nowrap max-w-[95vw] overflow-x-auto no-scrollbar">
+            <span className="truncate max-w-[30ch] text-xs text-muted-foreground shrink-0">{title}</span>
+            {currentIdx === -1 && hasText && (
+              <span className="inline-flex items-center gap-1 pl-1.5 border-l border-border shrink-0">
+                <Eye className="size-3 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Cỡ chữ</span>
+                <button onClick={() => setTextFontSize((s) => Math.max(12, s - 2))} className="px-1.5 hover:bg-muted rounded">A−</button>
+                <span className="tabular-nums text-xs text-foreground">{textFontSize}</span>
+                <button onClick={() => setTextFontSize((s) => Math.min(200, s + 2))} className="px-1.5 hover:bg-muted rounded">A+</button>
+              </span>
+            )}
+            <div className="h-6 w-px bg-border shrink-0" />
 
             {/* Tools */}
             <div className="flex items-center gap-0.5">
@@ -545,7 +560,7 @@ export function AnnotationEditor({
               <ToolBtn active={tool === "text"} onClick={() => setTool("text")} label="Chèn chữ" disabled={!canAnnotate}>
                 <Type className="size-4" />
               </ToolBtn>
-              <ToolBtn active={tool === "stamp"} onClick={() => setTool("stamp")} label="Stamp" disabled={!canAnnotate}>
+              <ToolBtn active={tool === "stamp"} onClick={() => setTool("stamp")} label="Chấm bài" disabled={!canAnnotate}>
                 <Stamp className="size-4" />
               </ToolBtn>
               <ToolBtn active={tool === "pan"} onClick={() => setTool("pan")} label="Kéo">
@@ -569,9 +584,9 @@ export function AnnotationEditor({
                         stampIdx === i ? "ring-2 ring-offset-1 ring-primary" : "hover:bg-muted",
                       )}
                       style={{ color: s.color }}
-                      title={`Stamp ${s.label}`}
+                      title={`Chấm bài ${s.label}`}
                     >
-                      {s.label}
+                      {s.mark} {s.label}
                     </button>
                   ))}
                 </div>
@@ -644,7 +659,7 @@ export function AnnotationEditor({
             >
               {Math.round(zoomLevel * 100)}%
             </button>
-            <Button variant="ghost" size="icon" onClick={() => setZoomLevel((z) => Math.min(3, z + 0.25))} className="size-8 rounded-full text-foreground" aria-label="Phóng to">
+            <Button variant="ghost" size="icon" onClick={() => setZoomLevel((z) => Math.min(10, z + 0.25))} className="size-8 rounded-full text-foreground" aria-label="Phóng to">
               <ZoomIn className="size-4" />
             </Button>
 
@@ -669,22 +684,6 @@ export function AnnotationEditor({
               <Save className="size-3.5" />
               {saving ? "Lưu..." : "Lưu"}
             </Button>
-          </div>
-
-          {/* Title + text resize khi đang ở chế độ văn bản */}
-          <div className="mt-1.5 text-center">
-            <div className="inline-flex items-center gap-2 bg-card/90 backdrop-blur rounded-full px-3 py-1 text-xs text-muted-foreground border shadow-sm">
-              <span className="truncate max-w-[40ch]">{title}</span>
-              {currentIdx === -1 && hasText && (
-                <span className="inline-flex items-center gap-1 pl-2 border-l">
-                  <Eye className="size-3" />
-                  Cỡ chữ
-                  <button onClick={() => setTextFontSize((s) => Math.max(12, s - 2))} className="px-1.5 hover:bg-muted rounded">A−</button>
-                  <span className="tabular-nums">{textFontSize}</span>
-                  <button onClick={() => setTextFontSize((s) => Math.min(48, s + 2))} className="px-1.5 hover:bg-muted rounded">A+</button>
-                </span>
-              )}
-            </div>
           </div>
         </div>
       )}
@@ -718,7 +717,7 @@ export function AnnotationEditor({
               Cỡ chữ
               <button onClick={() => setTextFontSize((s) => Math.max(14, s - 4))} className="px-1.5 hover:bg-muted rounded">A−</button>
               <span className="tabular-nums">{textFontSize}</span>
-              <button onClick={() => setTextFontSize((s) => Math.min(64, s + 4))} className="px-1.5 hover:bg-muted rounded">A+</button>
+              <button onClick={() => setTextFontSize((s) => Math.min(200, s + 4))} className="px-1.5 hover:bg-muted rounded">A+</button>
             </span>
           )}
         </div>
@@ -1027,7 +1026,10 @@ export function AnnotationEditor({
                 return (
                   <div
                     key={origIdx}
-                    className="absolute font-heading font-bold pointer-events-none select-none drop-shadow-sm"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => removeStamp(origIdx)}
+                    title="Click để xóa dấu"
+                    className="absolute font-heading font-bold select-none drop-shadow-sm cursor-pointer leading-none"
                     style={{
                       left: it.x,
                       top: it.y - it.fontSize,
@@ -1035,7 +1037,7 @@ export function AnnotationEditor({
                       fontSize: it.fontSize,
                     }}
                   >
-                    {it.label}
+                    {it.label[0]}
                   </div>
                 )
               })}
