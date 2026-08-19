@@ -53,7 +53,7 @@ export type SessionRow = {
 
 export type AnnotationStamp = {
   kind: "stamp"
-  label: string // e.g. "✓ Tốt", "★ Xuất sắc", "⚠ Xem lại", "❌ Sai"
+  label: string // dấu chấm bài, VD "✓" (bản cũ có thể lưu cả tên "✓ Tốt")
   color: string
   x: number
   y: number
