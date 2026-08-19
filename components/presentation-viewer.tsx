@@ -29,6 +29,7 @@ export interface PresentationViewerProps {
   endsAt?: string | null
   durationSeconds?: number
   board?: (openGroup: (groupNumber: number) => void) => React.ReactNode
+  barsOnCollapse?: boolean
 }
 
 function colsFor(count: number): string {
@@ -52,6 +53,7 @@ export function PresentationViewer({
   endsAt = null,
   durationSeconds = 600,
   board,
+  barsOnCollapse = false,
 }: PresentationViewerProps) {
   const [presentation, setPresentation] = useState<any>(null)
   const [active, setActive] = useState(false)
@@ -81,9 +83,26 @@ export function PresentationViewer({
         data.ends_at ? Math.max(0, Math.ceil((new Date(data.ends_at).getTime() - Date.now()) / 1000)) : null,
       )
       if (!isTeacher) setActive(Boolean(data.is_visible))
-      const { data: signed } = await supabase.storage
+    }
+    load()
+  }, [presentationId, supabase, isTeacher])
+
+  // Tạo signed URL 24h một lần để Office Online Viewer tải được file cả buổi học
+  useEffect(() => {
+    const storagePath = presentation?.storage_path ?? presentation?.file_path
+    if (!storagePath) return
+
+    let cancelled = false
+
+    const createSignedUrl = async () => {
+      const { data: signed, error } = await supabase.storage
         .from("presentations")
-        .createSignedUrl(data.storage_path ?? data.file_path, 3600)
+        .createSignedUrl(storagePath, 60 * 60 * 24) // 24 giờ, đủ dài cho một buổi học
+      if (cancelled) return
+      if (error) {
+        console.error("Không tạo được signed URL cho presentation:", error)
+        return
+      }
       if (signed?.signedUrl) {
         setRawUrl(signed.signedUrl)
         setSourceUrl(
@@ -91,8 +110,13 @@ export function PresentationViewer({
         )
       }
     }
-    load()
-  }, [presentationId, supabase, isTeacher])
+
+    createSignedUrl()
+
+    return () => {
+      cancelled = true
+    }
+  }, [presentation?.storage_path, presentation?.file_path, supabase])
 
   useEffect(() => {
     if (!presentationId) return
@@ -140,16 +164,29 @@ export function PresentationViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presentationId])
 
-  // Khi mở lại phiên (ended -> running): reset trạng thái chiếu để đồng hồ nổi
-  // và 8 thanh nhóm hoạt động lại như khi bấm "Bắt đầu"
+  // Khi phiên bắt đầu chạy (từ bất kỳ trạng thái nào: idle/ended -> running):
+  // reset trạng thái chiếu để đồng hồ nổi và 8 thanh nhóm hoạt động lại như khi
+  // bấm "Bắt đầu". Trước đây chỉ reset cho ended -> running nên phiên mới (idle
+  // -> running) vẫn giữ projectionEnded từ phiên cũ và 8 thanh không hiện.
   const prevStatusRef = useRef(status)
   useEffect(() => {
     const prev = prevStatusRef.current
     prevStatusRef.current = status
-    if (prev === "ended" && status === "running") {
+    if (prev !== "running" && status === "running") {
       setProjectionEnded(false)
     }
   }, [status])
+
+  // Bật 8 thanh nhóm bất cứ khi nào drawer đóng và phiên đang chạy (hoặc đang
+  // preview) mà chưa kết thúc chiếu. Không phụ thuộc thời điểm click thu drawer:
+  // nếu status cập nhật sau khi collapse, effect này vẫn latch thanh lên.
+  // Giữ guard !projectionEnded để không khôi phục lại trạng thái sau khi GV
+  // bấm "Kết thúc phiên".
+  useEffect(() => {
+    if (!drawerOpen && (status === "running" || barsOnCollapse) && !projectionEnded) {
+      setBarsVisible(true)
+    }
+  }, [drawerOpen, status, barsOnCollapse, projectionEnded])
 
   const subsByGroup = useMemo(() => {
     const m: Record<string, SubmissionRow> = {}
@@ -197,10 +234,15 @@ export function PresentationViewer({
       .then(() => undefined)
   }
 
-  // Thu màn hình xổ ra: nếu phiên đang chạy thì bật 8 thanh nhóm (latch, không tắt khi mở lại drawer)
+  // Thu màn hình xổ ra: nếu phiên đang chạy hoặc đang xem/preview một phiên thì
+  // bật 8 thanh nhóm (latch, không tắt khi mở lại drawer).
+  // projectionEnded chỉ được reset khi phiên bắt đầu chạy (xem effect phía trên),
+  // nên nút "Kết thúc phiên" không bị khôi phục lại khi thu drawer.
   function collapseDrawer() {
     setDrawerOpen(false)
-    if (status === "running") setBarsVisible(true)
+    if (status === "running" || barsOnCollapse) {
+      setBarsVisible(true)
+    }
   }
 
   // Kết thúc phiên: chỉ tắt 8 thanh + đồng hồ nổi, phiên vẫn chạy
@@ -354,13 +396,20 @@ export function PresentationViewer({
                 </>
               )}
             </div>
-            {/* Kết thúc phiên: chỉ hiện khi phiên đang chạy và chưa kết thúc chiếu */}
-            {status === "running" && !projectionEnded && (
+            {/* Kết thúc phiên: chỉ hiện khi phiên đang chạy; nếu đã kết thúc chiếu thì
+                hiện text thay cho nút để GV biết trạng thái */}
+            {status === "running" && (
               <div className="border-t p-2">
-                <Button variant="destructive" size="sm" className="w-full gap-1" onClick={endProjection}>
-                  <X className="size-3.5" aria-hidden="true" />
-                  Kết thúc phiên
-                </Button>
+                {projectionEnded ? (
+                  <p className="w-full text-center text-xs font-medium text-muted-foreground">
+                    Đã kết thúc phiên
+                  </p>
+                ) : (
+                  <Button variant="destructive" size="sm" className="w-full gap-1" onClick={endProjection}>
+                    <X className="size-3.5" aria-hidden="true" />
+                    Kết thúc phiên
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -394,8 +443,8 @@ export function PresentationViewer({
           )}
 
           {/* Thanh nhóm bên trái (nhóm 1-4) */}
-          {status === "running" && barsVisible && !projectionEnded && (
-            <div className="absolute inset-y-0 left-6 z-20 flex w-[2.5vw] flex-col justify-center gap-1 py-8">
+          {(status === "running" || barsOnCollapse) && barsVisible && !projectionEnded && (
+            <div className="absolute inset-y-0 left-6 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8">
               {orderedGroups.slice(0, 4).map((number) => {
                 const group = groups.find((item) => item.group_number === number)
                 const label = group?.label ?? `Nhóm ${number}`
@@ -405,10 +454,10 @@ export function PresentationViewer({
                     key={number}
                     onClick={() => openGroup(number)}
                     title={`${label}${submitted ? " - Đã nộp" : " - Chưa nộp"}`}
-                    className={`h-[3.333vh] w-full rounded-r text-[8px] leading-[1.1] break-words text-center transition-colors ${
+                    className={`h-[4vh] w-full rounded-r text-[9.6px] leading-[1.1] break-words text-center transition-colors ${
                       submitted
                         ? "bg-primary text-primary-foreground font-bold"
-                        : "bg-white/15 text-white/80 border border-white/20 hover:bg-white/25"
+                        : "bg-neutral-300/70 text-black border border-black/10 hover:bg-neutral-200/80"
                     }`}
                   >
                     {label}
@@ -419,8 +468,8 @@ export function PresentationViewer({
           )}
 
           {/* Thanh nhóm bên phải (nhóm 5-8) */}
-          {status === "running" && barsVisible && !projectionEnded && (
-            <div className="absolute inset-y-0 right-0 z-20 flex w-[2.5vw] flex-col justify-center gap-1 py-8">
+          {(status === "running" || barsOnCollapse) && barsVisible && !projectionEnded && (
+            <div className="absolute inset-y-0 right-0 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8">
               {orderedGroups.slice(4, 8).map((number) => {
                 const group = groups.find((item) => item.group_number === number)
                 const label = group?.label ?? `Nhóm ${number}`
@@ -430,10 +479,10 @@ export function PresentationViewer({
                     key={number}
                     onClick={() => openGroup(number)}
                     title={`${label}${submitted ? " - Đã nộp" : " - Chưa nộp"}`}
-                    className={`h-[3.333vh] w-full rounded-l text-[8px] leading-[1.1] break-words text-center transition-colors ${
+                    className={`h-[4vh] w-full rounded-l text-[9.6px] leading-[1.1] break-words text-center transition-colors ${
                       submitted
                         ? "bg-primary text-primary-foreground font-bold"
-                        : "bg-white/15 text-white/80 border border-white/20 hover:bg-white/25"
+                        : "bg-neutral-300/70 text-black border border-black/10 hover:bg-neutral-200/80"
                     }`}
                   >
                     {label}

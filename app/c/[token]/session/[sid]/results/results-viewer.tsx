@@ -250,7 +250,7 @@ function AnnotationOverlay({ items, fileIdx }: { items: AnnotationItem[]; fileId
                 fontSize: it.fontSize,
               }}
             >
-              {it.label}
+              {it.label[0]}
             </div>
           )
         }

@@ -25,6 +25,16 @@ import { GroupCardsGrid } from "@/components/group-card"
 import { getFiles } from "@/lib/submission-files"
 import { TimerPanel } from "@/components/timer-panel"
 import { Switch } from "@/components/ui/switch"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { sounds, isSoundEnabled, setSoundEnabled } from "@/lib/sounds"
 import { PresentationUpload } from "@/components/presentation-upload"
 import { PresentationViewer, startPresentationMode } from "@/components/presentation-viewer"
@@ -73,6 +83,7 @@ export function GroupSessionBoard({
   const [subs, setSubs] = useState(initialSubs)
   const [anns, setAnns] = useState(initialAnns)
   const [openGroupId, setOpenGroupId] = useState<string | null>(null)
+  const [unlockTarget, setUnlockTarget] = useState<SessionGroupRow | null>(null)
   const [slideshowIdx, setSlideshowIdx] = useState<number | null>(null) // chế độ trình chiếu cả lớp
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [showQr, setShowQr] = useState(false)
@@ -84,6 +95,7 @@ export function GroupSessionBoard({
   const [sessionsList, setSessionsList] = useState<any[] | null>(null)
   const [createSessionOpen, setCreateSessionOpen] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState("")
+  const [createTitleError, setCreateTitleError] = useState<string | null>(null)
   const [previewData, setPreviewData] = useState<{
     session: SessionRow
     groups: SessionGroupRow[]
@@ -91,10 +103,16 @@ export function GroupSessionBoard({
     anns: AnnotationRow[]
   } | null>(null)
   const initRef = useRef(true)
+  const previewRef = useRef(previewData)
 
   useEffect(() => {
     setSoundOn(isSoundEnabled())
   }, [])
+
+  // Theo dõi previewData để handler realtime biết cần cập nhật state nào
+  useEffect(() => {
+    previewRef.current = previewData
+  }, [previewData])
 
   // Check if user is teacher
   useEffect(() => {
@@ -138,15 +156,25 @@ export function GroupSessionBoard({
     loadPresentation()
   }, [session.id])
 
-  // Realtime với hiệu ứng live
+  // Phiên đang được hiển thị/nghe realtime (có thể là phiên đang preview)
+  const activeSessionId = previewData?.session?.id ?? session.id
+
+  // Realtime với hiệu ứng live — theo phiên đang hiển thị, kể cả khi preview phiên khác
   useEffect(() => {
     const supabase = createClient()
     const ch = supabase
-      .channel(`sess-${session.id}`)
+      .channel(`sess-${activeSessionId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "sessions", filter: `id=eq.${session.id}` },
-        (p: any) => p.new && setSession(p.new as SessionRow),
+        { event: "*", schema: "public", table: "sessions", filter: `id=eq.${activeSessionId}` },
+        (p: any) => {
+          if (!p.new) return
+          if (previewRef.current && previewRef.current.session.id === activeSessionId) {
+            setPreviewData((cur) => (cur ? { ...cur, session: p.new as SessionRow } : cur))
+          } else {
+            setSession(p.new as SessionRow)
+          }
+        },
       )
       .on(
         "postgres_changes",
@@ -154,11 +182,26 @@ export function GroupSessionBoard({
           event: "*",
           schema: "public",
           table: "session_groups",
-          filter: `session_id=eq.${session.id}`,
+          filter: `session_id=eq.${activeSessionId}`,
         },
         (p: any) => {
           if (p.eventType === "UPDATE" && p.new) {
-            setGroups((cur) => cur.map((g) => (g.id === p.new.id ? (p.new as SessionGroupRow) : g)))
+            if (previewRef.current && previewRef.current.session.id === activeSessionId) {
+              setPreviewData((cur) =>
+                cur
+                  ? {
+                      ...cur,
+                      groups: cur.groups.map((g) =>
+                        g.id === p.new.id ? (p.new as SessionGroupRow) : g,
+                      ),
+                    }
+                  : cur,
+              )
+            } else {
+              setGroups((cur) =>
+                cur.map((g) => (g.id === p.new.id ? (p.new as SessionGroupRow) : g)),
+              )
+            }
             setLiveMap((m) => ({ ...m, [p.new.id]: Date.now() }))
           }
         },
@@ -169,21 +212,18 @@ export function GroupSessionBoard({
           event: "*",
           schema: "public",
           table: "submissions",
-          filter: `session_id=eq.${session.id}`,
+          filter: `session_id=eq.${activeSessionId}`,
         },
         (p: any) => {
           if ((p.eventType === "INSERT" || p.eventType === "UPDATE") && p.new) {
-            setSubs((cur) => {
-              const idx = cur.findIndex((x) => x.id === p.new.id)
-              if (idx >= 0) {
-                const next = cur.slice()
-                next[idx] = p.new as SubmissionRow
-                return next
-              }
-              return [...cur, p.new as SubmissionRow]
-            })
-            if (p.new.session_group_id) {
-              setLiveMap((m) => ({ ...m, [p.new.session_group_id]: Date.now() }))
+            const row = p.new as SubmissionRow
+            if (previewRef.current && previewRef.current.session.id === activeSessionId) {
+              setPreviewData((cur) => (cur ? { ...cur, subs: upsertRow(cur.subs, row) } : cur))
+            } else {
+              setSubs((cur) => upsertRow(cur, row))
+            }
+            if (row.session_group_id) {
+              setLiveMap((m) => ({ ...m, [row.session_group_id as string]: Date.now() }))
             }
             if (!initRef.current && p.eventType === "INSERT" && isSoundEnabled()) {
               sounds.newSubmission()
@@ -198,19 +238,16 @@ export function GroupSessionBoard({
           event: "*",
           schema: "public",
           table: "annotations",
-          filter: `session_id=eq.${session.id}`,
+          filter: `session_id=eq.${activeSessionId}`,
         },
         (p: any) => {
           if ((p.eventType === "INSERT" || p.eventType === "UPDATE") && p.new) {
-            setAnns((cur) => {
-              const idx = cur.findIndex((x) => x.id === p.new.id)
-              if (idx >= 0) {
-                const next = cur.slice()
-                next[idx] = p.new as AnnotationRow
-                return next
-              }
-              return [...cur, p.new as AnnotationRow]
-            })
+            const row = p.new as AnnotationRow
+            if (previewRef.current && previewRef.current.session.id === activeSessionId) {
+              setPreviewData((cur) => (cur ? { ...cur, anns: upsertRow(cur.anns, row) } : cur))
+            } else {
+              setAnns((cur) => upsertRow(cur, row))
+            }
           }
         },
       )
@@ -219,7 +256,7 @@ export function GroupSessionBoard({
     return () => {
       supabase.removeChannel(ch)
     }
-  }, [session.id])
+  }, [activeSessionId])
 
   // Xóa live indicator sau vài giây
   useEffect(() => {
@@ -293,6 +330,13 @@ export function GroupSessionBoard({
 
   async function handleCreateSession() {
     const title = newSessionTitle.trim() || "Thảo luận mới"
+    if (
+      sessionsList?.some((s) => s.title?.trim().toLowerCase() === title.toLowerCase())
+    ) {
+      setCreateTitleError("Trùng tên phiên thảo luận")
+      return
+    }
+    setCreateTitleError(null)
     const supabase = createClient()
     const { data: session, error } = await supabase
       .from("sessions")
@@ -326,6 +370,7 @@ export function GroupSessionBoard({
     }
     setCreateSessionOpen(false)
     setNewSessionTitle("")
+    setCreateTitleError(null)
     await refreshSessionsList()
     toast.success("Đã tạo phiên thảo luận mới", { duration: 1500 })
   }
@@ -406,6 +451,7 @@ export function GroupSessionBoard({
     if (!next) return
     if (previewData) setPreviewData((p) => (p ? { ...p, session: { ...p.session, ...next } } : p))
     else setSession((s) => ({ ...s, ...next }))
+    void refreshSessionsList()
   }
 
   function handleSessionPatch(patch: Partial<SessionRow>) {
@@ -496,7 +542,10 @@ export function GroupSessionBoard({
             <div className="flex flex-col gap-1.5 border rounded-lg bg-background p-2">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-semibold text-muted-foreground">Chọn phiên thảo luận</p>
-                <Button variant="outline" size="sm" className="gap-1 text-xs px-2 h-7" onClick={() => setCreateSessionOpen(true)}>
+                <Button variant="outline" size="sm" className="gap-1 text-xs px-2 h-7" onClick={() => {
+                  setCreateTitleError(null)
+                  setCreateSessionOpen(true)
+                }}>
                   <Plus className="size-3" aria-hidden="true" />
                   Tạo phiên mới
                 </Button>
@@ -536,7 +585,10 @@ export function GroupSessionBoard({
                 </div>
               )}
               {createSessionOpen && (
-                <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50" onClick={() => setCreateSessionOpen(false)}>
+                <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50" onClick={() => {
+                  setCreateTitleError(null)
+                  setCreateSessionOpen(false)
+                }}>
                   <div
                     className="w-[min(360px,90vw)] rounded-xl bg-background p-4 flex flex-col gap-3 shadow-2xl"
                     onClick={(e) => e.stopPropagation()}
@@ -545,7 +597,10 @@ export function GroupSessionBoard({
                     <Input
                       autoFocus
                       value={newSessionTitle}
-                      onChange={(e) => setNewSessionTitle(e.target.value)}
+                      onChange={(e) => {
+                        setNewSessionTitle(e.target.value)
+                        if (createTitleError) setCreateTitleError(null)
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleCreateSession()
                       }}
@@ -553,13 +608,19 @@ export function GroupSessionBoard({
                       className="w-full"
                     />
                     <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setCreateSessionOpen(false)}>
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setCreateTitleError(null)
+                        setCreateSessionOpen(false)
+                      }}>
                         Hủy
                       </Button>
                       <Button size="sm" onClick={handleCreateSession}>
                         Tạo
                       </Button>
                     </div>
+                    {createTitleError && (
+                      <p className="text-xs text-destructive font-medium">{createTitleError}</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -799,16 +860,7 @@ export function GroupSessionBoard({
               annsByGroup={displayAnnsByGroup}
               liveMap={liveMap}
               onOpen={handleOpen}
-              onUnlock={(g) => {
-                if (
-                  !confirm(
-                    `Mở lại ${g.label}? Bài đã nộp và phần chấm sẽ bị xóa để nhóm khác vào chọn từ đầu.`,
-                  )
-                )
-                  return
-                unlockGroupAction(g.id, true)
-                toast("Đã mở lại " + g.label)
-              }}
+              onUnlock={(g) => setUnlockTarget(g)}
               onMaximize={embedded ? undefined : (idx) => setSlideshowIdx(idx)}
               colsClass={colsClass}
             />
@@ -886,6 +938,37 @@ export function GroupSessionBoard({
     </div>
   )
 
+  // Dialog xác nhận mở lại nhóm (dùng AlertDialog thay confirm() native để không
+  // thoát khỏi fullscreen trình chiếu — trình duyệt buộc thoát fullscreen khi
+  // hiển thị dialog native).
+  const unlockDialog = (
+    <AlertDialog open={!!unlockTarget} onOpenChange={(v) => !v && setUnlockTarget(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Mở lại nhóm</AlertDialogTitle>
+          <AlertDialogDescription>
+            {unlockTarget
+              ? `Mở lại ${unlockTarget.label}? Bài đã nộp và phần chấm sẽ bị xóa để nhóm khác vào chọn từ đầu.`
+              : ""}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setUnlockTarget(null)}>Hủy</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (!unlockTarget) return
+              unlockGroupAction(unlockTarget.id, true)
+              toast("Đã mở lại " + unlockTarget.label)
+              setUnlockTarget(null)
+            }}
+          >
+            Mở lại
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
   // If presentation is loaded and teacher, wrap in PresentationViewer
   if (presentation && isTeacher) {
     return (
@@ -903,6 +986,7 @@ export function GroupSessionBoard({
           status={displaySession.status}
           endsAt={displaySession.ends_at}
           durationSeconds={displaySession.duration_seconds}
+          barsOnCollapse={displaySession.status === "running" || previewData !== null}
           board={(openGroup) =>
             renderBoard(true, (id) => {
               const g = displayGroups.find((x) => x.id === id)
@@ -913,6 +997,7 @@ export function GroupSessionBoard({
           {mainContent}
         </PresentationViewer>
         {qrModal}
+        {unlockDialog}
       </>
     )
   }
@@ -921,6 +1006,7 @@ export function GroupSessionBoard({
     <>
       {mainContent}
       {qrModal}
+      {unlockDialog}
     </>
   )
 }
@@ -1039,4 +1125,14 @@ function Slideshow({
       </button>
     </div>
   )
+}
+
+function upsertRow<T extends { id: string }>(list: T[], row: T): T[] {
+  const idx = list.findIndex((x) => x.id === row.id)
+  if (idx >= 0) {
+    const next = list.slice()
+    next[idx] = row
+    return next
+  }
+  return [...list, row]
 }
