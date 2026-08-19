@@ -65,11 +65,36 @@ export function PresentationViewer({
   const [rawUrl, setRawUrl] = useState<string | null>(null)
   const [openGroupId, setOpenGroupId] = useState<string | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null)
-  const [hoverTimer, setHoverTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
-  const [closeTimer, setCloseTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const drawerStateBeforeEditorRef = useRef<boolean | null>(null)
   const [barsVisible, setBarsVisible] = useState(false)
   const [projectionEnded, setProjectionEnded] = useState(false)
   const supabase = useMemo(() => createClient(), [])
+
+  // Timers (hover/close drawer) được giữ trong ref, không phải state, để các
+  // handler không bao giờ dính giá trị cũ trong closure (nguồn race khiến
+  // drawer tự thu rồi không mở lại được).
+  function clearHoverTimer() {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
+  }
+
+  function clearCloseTimer() {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      clearHoverTimer()
+      clearCloseTimer()
+    }
+  }, [])
 
   useEffect(() => {
     const load = async () => {
@@ -245,6 +270,7 @@ export function PresentationViewer({
   // projectionEnded chỉ được reset khi phiên bắt đầu chạy (xem effect phía trên),
   // nên nút "Kết thúc phiên" không bị khôi phục lại khi thu drawer.
   function collapseDrawer() {
+    clearCloseTimer()
     setDrawerOpen(false)
     if (status === "running" || barsOnCollapse) {
       setBarsVisible(true)
@@ -265,12 +291,19 @@ export function PresentationViewer({
     }
   }
 
+  // Mở editor cho nhóm mà KHÔNG đóng drawer: editor (z-40) phủ toàn màn hình lên
+  // trên drawer nên để drawer mở phía sau vô hại. Ghi lại trạng thái drawer để
+  // khôi phục lại khi đóng editor, đồng thời xoá closeTimer còn treo (tránh
+  // drawer tự thu lại sau khi editor mở và tạo cảm giác "treo").
+  const openGroupById = (id: string) => {
+    drawerStateBeforeEditorRef.current = drawerOpen
+    clearCloseTimer()
+    setOpenGroupId(id)
+  }
+
   const openGroup = (number: number) => {
     const sessionGroup = groups.find((item) => item.group_number === number)
-    if (sessionGroup) {
-      setOpenGroupId(sessionGroup.id)
-      setDrawerOpen(false)
-    }
+    if (sessionGroup) openGroupById(sessionGroup.id)
   }
 
   const copyLink = () => {
@@ -336,11 +369,13 @@ export function PresentationViewer({
           <div
             className="absolute left-0 top-0 bottom-0 w-6 z-10"
             onMouseEnter={() => {
-              if (closeTimer) clearTimeout(closeTimer)
-              setHoverTimer(setTimeout(() => setDrawerOpen(true), 1500))
+              if (openGroupId) return
+              clearCloseTimer()
+              clearHoverTimer()
+              hoverTimerRef.current = setTimeout(() => setDrawerOpen(true), 1500)
             }}
             onMouseLeave={() => {
-              if (hoverTimer) clearTimeout(hoverTimer)
+              clearHoverTimer()
             }}
           />
 
@@ -350,11 +385,13 @@ export function PresentationViewer({
               drawerOpen ? "translate-x-0" : "-translate-x-full"
             }`}
             onMouseEnter={() => {
-              if (closeTimer) clearTimeout(closeTimer)
+              clearCloseTimer()
             }}
             onMouseLeave={() => {
-              if (hoverTimer) clearTimeout(hoverTimer)
-              setCloseTimer(setTimeout(() => collapseDrawer(), 1000))
+              clearHoverTimer()
+              if (openGroupId) return
+              clearCloseTimer()
+              closeTimerRef.current = setTimeout(() => collapseDrawer(), 1000)
             }}
           >
             <div className="flex items-center gap-2 border-b p-3">
@@ -370,17 +407,6 @@ export function PresentationViewer({
                     QR code
                   </Button>
                 </>
-              )}
-              {status === "running" && !projectionEnded && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="gap-1 ml-auto"
-                  onClick={endProjection}
-                >
-                  <X className="size-3.5" aria-hidden="true" />
-                  Kết thúc phiên
-                </Button>
               )}
               <button
                 type="button"
@@ -411,16 +437,33 @@ export function PresentationViewer({
                       subsByGroup={subsByGroup}
                       annsByGroup={annsByGroup}
                       liveMap={liveMap}
-                      onOpen={(id) => {
-                        setOpenGroupId(id)
-                        setDrawerOpen(false)
-                      }}
+                      onOpen={openGroupById}
                       colsClass={colsFor(groups.length)}
                     />
                   </div>
                 </>
               )}
             </div>
+
+            {(status === "running" && !projectionEnded) || projectionEnded || status === "ended" ? (
+              <div className="border-t p-3">
+                {status === "running" && !projectionEnded ? (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="w-full gap-1"
+                    onClick={endProjection}
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                    Kết thúc phiên
+                  </Button>
+                ) : (
+                  <p className="text-center text-sm font-medium text-muted-foreground">
+                    Đã kết thúc phiên
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
 
           {/* QR modal */}
@@ -545,7 +588,14 @@ export function PresentationViewer({
                   })
                   toast.success("Đã lưu", { duration: 1500 })
                 }}
-                onClose={() => setOpenGroupId(null)}
+                onClose={() => {
+                  clearCloseTimer()
+                  if (drawerStateBeforeEditorRef.current !== null) {
+                    setDrawerOpen(drawerStateBeforeEditorRef.current)
+                    drawerStateBeforeEditorRef.current = null
+                  }
+                  setOpenGroupId(null)
+                }}
               />
             </div>
           )}
