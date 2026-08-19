@@ -863,6 +863,7 @@ export function GroupSessionBoard({
               onUnlock={(g) => setUnlockTarget(g)}
               onMaximize={embedded ? undefined : (idx) => setSlideshowIdx(idx)}
               colsClass={colsClass}
+              compact={embedded}
             />
           </div>
         </div>
@@ -987,6 +988,7 @@ export function GroupSessionBoard({
           endsAt={displaySession.ends_at}
           durationSeconds={displaySession.duration_seconds}
           barsOnCollapse={displaySession.status === "running" || previewData !== null}
+          onSessionChanged={handleSessionChanged}
           board={(openGroup) =>
             renderBoard(true, (id) => {
               const g = displayGroups.find((x) => x.id === id)

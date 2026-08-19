@@ -11,7 +11,7 @@ import { GroupCardsGrid } from "@/components/group-card"
 import { TimerPanel } from "@/components/timer-panel"
 import { getFiles } from "@/lib/submission-files"
 import { useCountdown, formatClock } from "@/lib/use-countdown"
-import { saveAnnotationAction } from "@/app/actions"
+import { endSessionAction, saveAnnotationAction } from "@/app/actions"
 import type { AnnotationItem, AnnotationRow, SubmissionRow } from "@/lib/types"
 
 export interface PresentationViewerProps {
@@ -30,6 +30,7 @@ export interface PresentationViewerProps {
   durationSeconds?: number
   board?: (openGroup: (groupNumber: number) => void) => React.ReactNode
   barsOnCollapse?: boolean
+  onSessionChanged?: (session: any) => void
 }
 
 function colsFor(count: number): string {
@@ -54,6 +55,7 @@ export function PresentationViewer({
   durationSeconds = 600,
   board,
   barsOnCollapse = false,
+  onSessionChanged,
 }: PresentationViewerProps) {
   const [presentation, setPresentation] = useState<any>(null)
   const [active, setActive] = useState(false)
@@ -175,6 +177,10 @@ export function PresentationViewer({
     if (prev !== "running" && status === "running") {
       setProjectionEnded(false)
     }
+    if (status === "ended") {
+      setProjectionEnded(true)
+      setBarsVisible(false)
+    }
   }, [status])
 
   // Bật 8 thanh nhóm bất cứ khi nào drawer đóng và phiên đang chạy (hoặc đang
@@ -245,10 +251,18 @@ export function PresentationViewer({
     }
   }
 
-  // Kết thúc phiên: chỉ tắt 8 thanh + đồng hồ nổi, phiên vẫn chạy
-  function endProjection() {
+  // Kết thúc phiên: tắt 8 thanh + đồng hồ nổi VÀ kết thúc phiên hoàn toàn trong
+  // DB (status = ended). Trước đây chỉ tắt cục bộ nên khi mở lại trình chiếu,
+  // phiên vẫn còn "running" khiến nút + thanh nhóm tự hiện trở lại.
+  async function endProjection() {
     setBarsVisible(false)
     setProjectionEnded(true)
+    try {
+      const next = await endSessionAction(sessionId)
+      if (next && onSessionChanged) onSessionChanged(next)
+    } catch (err) {
+      toast.error(`Không thể kết thúc phiên: ${(err as Error)?.message ?? "lỗi không xác định"}`)
+    }
   }
 
   const openGroup = (number: number) => {
@@ -357,6 +371,17 @@ export function PresentationViewer({
                   </Button>
                 </>
               )}
+              {status === "running" && !projectionEnded && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="gap-1 ml-auto"
+                  onClick={endProjection}
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                  Kết thúc phiên
+                </Button>
+              )}
               <button
                 type="button"
                 onClick={collapseDrawer}
@@ -396,22 +421,6 @@ export function PresentationViewer({
                 </>
               )}
             </div>
-            {/* Kết thúc phiên: chỉ hiện khi phiên đang chạy; nếu đã kết thúc chiếu thì
-                hiện text thay cho nút để GV biết trạng thái */}
-            {status === "running" && (
-              <div className="border-t p-2">
-                {projectionEnded ? (
-                  <p className="w-full text-center text-xs font-medium text-muted-foreground">
-                    Đã kết thúc phiên
-                  </p>
-                ) : (
-                  <Button variant="destructive" size="sm" className="w-full gap-1" onClick={endProjection}>
-                    <X className="size-3.5" aria-hidden="true" />
-                    Kết thúc phiên
-                  </Button>
-                )}
-              </div>
-            )}
           </div>
 
           {/* QR modal */}

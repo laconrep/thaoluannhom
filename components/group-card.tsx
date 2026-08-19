@@ -41,6 +41,7 @@ export function GroupCardsGrid({
   onOpen,
   onUnlock,
   onMaximize,
+  compact = false,
 }: {
   groups: SessionGroupRow[]
   subsByGroup: Record<string, SubmissionRow>
@@ -50,9 +51,14 @@ export function GroupCardsGrid({
   onOpen: (groupId: string) => void
   onUnlock?: (group: SessionGroupRow) => void
   onMaximize?: (index: number) => void
+  compact?: boolean
 }) {
   return (
-    <div className={`grid ${colsClass ?? "grid-cols-3"} gap-2.5 auto-rows-fr h-full`}>
+    <div
+      className={`grid ${colsClass ?? "grid-cols-3"} gap-2.5 ${
+        compact ? "auto-rows-[170px]" : "auto-rows-fr h-full"
+      }`}
+    >
       {groups.map((g, idx) => {
         const sub = subsByGroup[g.id]
         const ann = annsByGroup[g.id]
