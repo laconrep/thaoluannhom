@@ -25,16 +25,6 @@ import { GroupCardsGrid } from "@/components/group-card"
 import { getFiles } from "@/lib/submission-files"
 import { TimerPanel } from "@/components/timer-panel"
 import { Switch } from "@/components/ui/switch"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import { sounds, isSoundEnabled, setSoundEnabled } from "@/lib/sounds"
 import { PresentationUpload } from "@/components/presentation-upload"
 import { PresentationViewer, startPresentationMode } from "@/components/presentation-viewer"
@@ -83,7 +73,6 @@ export function GroupSessionBoard({
   const [subs, setSubs] = useState(initialSubs)
   const [anns, setAnns] = useState(initialAnns)
   const [openGroupId, setOpenGroupId] = useState<string | null>(null)
-  const [unlockTarget, setUnlockTarget] = useState<SessionGroupRow | null>(null)
   const [slideshowIdx, setSlideshowIdx] = useState<number | null>(null) // chế độ trình chiếu cả lớp
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [showQr, setShowQr] = useState(false)
@@ -860,9 +849,10 @@ export function GroupSessionBoard({
               annsByGroup={displayAnnsByGroup}
               liveMap={liveMap}
               onOpen={handleOpen}
-              onUnlock={(g) => setUnlockTarget(g)}
+              onUnlock={handleUnlock}
               onMaximize={embedded ? undefined : (idx) => setSlideshowIdx(idx)}
               colsClass={colsClass}
+              compact={embedded}
             />
           </div>
         </div>
@@ -938,36 +928,18 @@ export function GroupSessionBoard({
     </div>
   )
 
-  // Dialog xác nhận mở lại nhóm (dùng AlertDialog thay confirm() native để không
-  // thoát khỏi fullscreen trình chiếu — trình duyệt buộc thoát fullscreen khi
-  // hiển thị dialog native).
-  const unlockDialog = (
-    <AlertDialog open={!!unlockTarget} onOpenChange={(v) => !v && setUnlockTarget(null)}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Mở lại nhóm</AlertDialogTitle>
-          <AlertDialogDescription>
-            {unlockTarget
-              ? `Mở lại ${unlockTarget.label}? Bài đã nộp và phần chấm sẽ bị xóa để nhóm khác vào chọn từ đầu.`
-              : ""}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => setUnlockTarget(null)}>Hủy</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => {
-              if (!unlockTarget) return
-              unlockGroupAction(unlockTarget.id, true)
-              toast("Đã mở lại " + unlockTarget.label)
-              setUnlockTarget(null)
-            }}
-          >
-            Mở lại
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
+  // Mở lại nhóm: trả nhóm về trạng thái chưa ai chọn (xóa bài đã nộp + điểm) để
+  // HS khác vào chọn từ đầu. Không dùng AlertDialog/confirm() native vì dialog
+  // native buộc trình duyệt thoát fullscreen trình chiếu; confirm inline ngay
+  // trên thẻ nhóm trong drawer tránh hẳn overlay chặn click.
+  async function handleUnlock(group: SessionGroupRow) {
+    try {
+      await unlockGroupAction(group.id, true)
+      toast("Đã mở lại " + group.label)
+    } catch (err) {
+      toast.error(`Không thể mở lại nhóm: ${(err as Error)?.message ?? "lỗi không xác định"}`)
+    }
+  }
 
   // If presentation is loaded and teacher, wrap in PresentationViewer
   if (presentation && isTeacher) {
@@ -987,6 +959,7 @@ export function GroupSessionBoard({
           endsAt={displaySession.ends_at}
           durationSeconds={displaySession.duration_seconds}
           barsOnCollapse={displaySession.status === "running" || previewData !== null}
+          onSessionChanged={handleSessionChanged}
           board={(openGroup) =>
             renderBoard(true, (id) => {
               const g = displayGroups.find((x) => x.id === id)
@@ -997,7 +970,6 @@ export function GroupSessionBoard({
           {mainContent}
         </PresentationViewer>
         {qrModal}
-        {unlockDialog}
       </>
     )
   }
@@ -1006,7 +978,6 @@ export function GroupSessionBoard({
     <>
       {mainContent}
       {qrModal}
-      {unlockDialog}
     </>
   )
 }

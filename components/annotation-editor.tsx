@@ -5,6 +5,7 @@ import type { AnnotationItem, SubmissionFile } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useFullscreen } from "@/lib/use-fullscreen"
+import { renderAsync } from "docx-preview"
 import { cn } from "@/lib/utils"
 import {
   Pen,
@@ -110,6 +111,10 @@ export function AnnotationEditor({
   const rootRef = useRef<HTMLDivElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
+  const docxBoxRef = useRef<HTMLDivElement | null>(null)
+  const [docxWidth, setDocxWidth] = useState<number | null>(null)
+  const [docxError, setDocxError] = useState(false)
+  const [docxLoading, setDocxLoading] = useState(false)
   const panRef = useRef<{ active: boolean; startX: number; startY: number; scrollX: number; scrollY: number }>({
     active: false,
     startX: 0,
@@ -143,9 +148,56 @@ export function AnnotationEditor({
   const currentRotation = currentIdx >= 0 ? rotations[currentIdx] ?? 0 : 0
   const isImage = currentFile?.kind === "image"
   const isPdf = currentFile?.kind === "pdf"
-  const isOffice = currentFile?.kind === "docx" || currentFile?.kind === "pptx"
-  const canAnnotate = isImage || currentIdx === -1
+  const isDocx = currentFile?.kind === "docx"
+  const isPptx = currentFile?.kind === "pptx"
+  // PPT: khi đang dùng công cụ chấm (không phải bàn tay) thì khóa iframe để
+  // không tương tác được với file, chuột chỉ dùng để đặt dấu/vẽ.
+  const annotateLocked = isPptx && tool !== "pan"
+  const canAnnotate = isImage || currentIdx === -1 || isDocx || isPptx
   const annotationKey = currentIdx
+
+  // Render tệp .docx bằng docx-preview thành DOM thuần (thay iframe Office):
+  // scroll trang tự nhiên theo viewport, dấu bám nội dung, chấm chính xác như ảnh.
+  // Đo chiều rộng khối đã render để canh surface đúng bằng nội dung, giữ tọa độ
+  // annotation khớp chính xác với vị trí click.
+  useEffect(() => {
+    const el = docxBoxRef.current
+    if (!isDocx || !currentFile || !el) {
+      setDocxWidth(null)
+      setDocxError(false)
+      return
+    }
+    let cancelled = false
+    setDocxLoading(true)
+    ;(async () => {
+      try {
+        const res = await fetch(currentFile.url)
+        if (!res.ok) throw new Error("Không tải được tệp")
+        const blob = await res.blob()
+        if (cancelled) return
+        await renderAsync(blob, el, undefined, { className: "docx" })
+        if (cancelled) return
+        // Đo trang rộng nhất (wrapper là flex width:auto nên không đo được)
+        let pageWidth = 0
+        el.querySelectorAll<HTMLElement>("section.docx").forEach((s) => {
+          pageWidth = Math.max(pageWidth, s.offsetWidth)
+        })
+        setDocxWidth(pageWidth || null)
+        setDocxError(false)
+      } catch {
+        if (!cancelled) {
+          setDocxError(true)
+          setDocxWidth(null)
+        }
+      } finally {
+        if (!cancelled) setDocxLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIdx])
 
   const filteredItems = useMemo(() => {
     return items
@@ -232,7 +284,7 @@ export function AnnotationEditor({
           color: stamp.color,
           x,
           y,
-          fontSize: 22,
+          fontSize: 13,
           fileIndex: annotationKey,
         },
       ])
@@ -402,6 +454,20 @@ export function AnnotationEditor({
     setItems((cur) => cur.filter((_, i) => i !== origIdx))
   }
 
+  // Chuyển công cụ. Chuyển SANG bàn tay trên file PPT = mở khóa iframe để xem
+  // file (nhưng muốn dấu khỏi che nội dung nên xóa toàn bộ annotation của file).
+  // Áp dụng cho mọi công cụ chấm (stamp/bút/tô/gạch/chữ), chỉ riêng PPT — với
+  // docx/ảnh/văn bản thì không xóa. Chuyển qua lại giữa các công cụ chấm thì
+  // không xóa.
+  function switchTool(next: Tool) {
+    if (next === "pan" && tool !== "pan" && isPptx && currentFile) {
+      pushHistory()
+      setItems((cur) => cur.filter((it) => (it.fileIndex ?? -1) !== annotationKey))
+      setSelectedTextIdx(null)
+    }
+    setTool(next)
+  }
+
   function changeFontSelected(delta: number) {
     if (selectedTextIdx === null) return
     pushHistory()
@@ -548,22 +614,22 @@ export function AnnotationEditor({
 
             {/* Tools */}
             <div className="flex items-center gap-0.5">
-              <ToolBtn active={tool === "pen"} onClick={() => setTool("pen")} label="Bút (P)" disabled={!canAnnotate}>
+              <ToolBtn active={tool === "pen"} onClick={() => switchTool("pen")} label="Bút (P)" disabled={!canAnnotate}>
                 <Pen className="size-4" />
               </ToolBtn>
-              <ToolBtn active={tool === "highlight"} onClick={() => setTool("highlight")} label="Tô màu" disabled={!canAnnotate}>
+              <ToolBtn active={tool === "highlight"} onClick={() => switchTool("highlight")} label="Tô màu" disabled={!canAnnotate}>
                 <Highlighter className="size-4" />
               </ToolBtn>
-              <ToolBtn active={tool === "underline"} onClick={() => setTool("underline")} label="Gạch chân" disabled={!canAnnotate}>
+              <ToolBtn active={tool === "underline"} onClick={() => switchTool("underline")} label="Gạch chân" disabled={!canAnnotate}>
                 <Underline className="size-4" />
               </ToolBtn>
-              <ToolBtn active={tool === "text"} onClick={() => setTool("text")} label="Chèn chữ" disabled={!canAnnotate}>
+              <ToolBtn active={tool === "text"} onClick={() => switchTool("text")} label="Chèn chữ" disabled={!canAnnotate}>
                 <Type className="size-4" />
               </ToolBtn>
-              <ToolBtn active={tool === "stamp"} onClick={() => setTool("stamp")} label="Chấm bài" disabled={!canAnnotate}>
+              <ToolBtn active={tool === "stamp"} onClick={() => switchTool("stamp")} label="Chấm bài" disabled={!canAnnotate}>
                 <Stamp className="size-4" />
               </ToolBtn>
-              <ToolBtn active={tool === "pan"} onClick={() => setTool("pan")} label="Kéo">
+              <ToolBtn active={tool === "pan"} onClick={() => switchTool("pan")} label="Kéo">
                 <Hand className="size-4" />
               </ToolBtn>
             </div>
@@ -842,7 +908,12 @@ export function AnnotationEditor({
                 onTextPointerUp()
               }
             }}
-            style={{ cursor, minHeight: presentationMode ? undefined : "70vh" }}
+            style={{
+              cursor,
+              minHeight: presentationMode ? undefined : "70vh",
+              width: docxWidth ?? undefined,
+              margin: docxWidth ? "0 auto" : undefined,
+            }}
           >
             {currentIdx === -1 ? (
               <div
@@ -888,15 +959,57 @@ export function AnnotationEditor({
                   </Button>
                 </div>
               </div>
-            ) : isOffice && currentFile ? (
+            ) : isDocx && currentFile ? (
+              <div id="docx-root" className="w-full">
+                <div ref={docxBoxRef} />
+                {docxLoading && !docxError && (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    Đang tải tệp Word...
+                  </p>
+                )}
+                {docxError && (
+                  <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+                    <p className="text-sm text-muted-foreground">
+                      Không đọc được tệp .docx, mở qua trình xem của Office.
+                    </p>
+                    <div className="w-full h-[78vh]">
+                      <iframe
+                        src={officeEmbed(currentFile.url)}
+                        title={currentFile.name}
+                        className="w-full h-full rounded-md"
+                        allow="fullscreen"
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className="absolute top-2 right-2 z-20" onPointerDown={(e) => e.stopPropagation()}>
+                  <Button asChild variant="outline" size="sm" className="gap-1">
+                    <a href={currentFile.url} target="_blank" rel="noreferrer" download>
+                      <Download className="size-3.5" />
+                      Tải tệp
+                    </a>
+                  </Button>
+                </div>
+              </div>
+            ) : isPptx && currentFile ? (
               <div className="w-[1000px] h-[78vh] relative mx-auto">
                 <iframe
                   src={officeEmbed(currentFile.url)}
                   title={currentFile.name}
-                  className="w-full h-full rounded-md"
                   allow="fullscreen"
+                  className={cn(
+                    "w-full h-full rounded-md",
+                    // Khóa iframe khi đang chấm: chuột không xuyên qua, chỉ đặt dấu
+                    annotateLocked && "pointer-events-none",
+                  )}
                 />
-                <div className="absolute top-2 right-2">
+                {annotateLocked && (
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 rounded-full bg-background/90 border shadow px-3 py-1 text-xs text-muted-foreground pointer-events-none">
+                    <Hand className="size-3.5" />
+                    Chọn bàn tay để xem file
+                  </div>
+                )}
+                <div className="absolute top-2 right-2 z-20" onPointerDown={(e) => e.stopPropagation()}>
                   <Button asChild variant="outline" size="sm" className="gap-1">
                     <a href={currentFile.url} target="_blank" rel="noreferrer" download>
                       <Download className="size-3.5" />
