@@ -63,8 +63,8 @@ export function PresentationViewer({
   const [rawUrl, setRawUrl] = useState<string | null>(null)
   const [openGroupId, setOpenGroupId] = useState<string | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null)
-  const [hoverTimer, setHoverTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
-  const [closeTimer, setCloseTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [barsVisible, setBarsVisible] = useState(false)
   const [projectionEnded, setProjectionEnded] = useState(false)
   const supabase = useMemo(() => createClient(), [])
@@ -323,11 +323,11 @@ export function PresentationViewer({
           <div
             className="absolute left-0 top-0 bottom-0 w-6 z-10"
             onMouseEnter={() => {
-              if (closeTimer) clearTimeout(closeTimer)
-              setHoverTimer(setTimeout(() => setDrawerOpen(true), 1500))
+              if (closeTimer.current) clearTimeout(closeTimer.current)
+              hoverTimer.current = setTimeout(() => setDrawerOpen(true), 1500)
             }}
             onMouseLeave={() => {
-              if (hoverTimer) clearTimeout(hoverTimer)
+              if (hoverTimer.current) clearTimeout(hoverTimer.current)
             }}
           />
 
@@ -337,11 +337,11 @@ export function PresentationViewer({
               drawerOpen ? "translate-x-0" : "-translate-x-full"
             }`}
             onMouseEnter={() => {
-              if (closeTimer) clearTimeout(closeTimer)
+              if (closeTimer.current) clearTimeout(closeTimer.current)
             }}
             onMouseLeave={() => {
-              if (hoverTimer) clearTimeout(hoverTimer)
-              setCloseTimer(setTimeout(() => collapseDrawer(), 1000))
+              if (hoverTimer.current) clearTimeout(hoverTimer.current)
+              closeTimer.current = setTimeout(() => collapseDrawer(), 1000)
             }}
           >
             <div className="flex items-center gap-2 border-b p-3">
@@ -442,7 +442,12 @@ export function PresentationViewer({
 
           {/* Thanh nhóm bên trái (nhóm 1-4) */}
           {barsVisible && !projectionEnded && (
-            <div className="absolute inset-y-0 left-6 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8">
+            <div
+              className="absolute inset-y-0 left-6 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8"
+              onMouseEnter={() => {
+                if (hoverTimer.current) clearTimeout(hoverTimer.current)
+              }}
+            >
               {orderedGroups.slice(0, 4).map((number) => {
                 const group = groups.find((item) => item.group_number === number)
                 const label = group?.label ?? `Nhóm ${number}`
