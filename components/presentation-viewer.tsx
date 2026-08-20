@@ -76,6 +76,7 @@ export function PresentationViewer({
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const drawerStateBeforeEditorRef = useRef<boolean | null>(null)
+  const frameRef = useRef<HTMLIFrameElement | null>(null)
   const [barsVisible, setBarsVisible] = useState(false)
   const [projectionEnded, setProjectionEnded] = useState(false)
   const supabase = useMemo(() => createClient(), [])
@@ -95,6 +96,17 @@ export function PresentationViewer({
       clearTimeout(closeTimerRef.current)
       closeTimerRef.current = null
     }
+  }
+
+  // Chỉ tự thu drawer khi chuột thực sự rời sang vùng trình chiếu (PowerPoint)
+  // hoặc thoát khỏi cửa sổ. Nếu chuột chỉ trỏ sang một overlay/dialog/bars khác
+  // (vd: hộp thoại "Mở lại nhóm", QR code — phần tử này vừa xuất hiện đè lên
+  // drawer dưới một con trỏ đứng yên cũng kích hoạt mouseleave), thì KHÔNG thu
+  // drawer để tránh drawer tự đóng giữa chừng và bị "treo".
+  function pointerOverPresentationFrame(e: React.MouseEvent): boolean {
+    const el = document.elementFromPoint(e.clientX, e.clientY)
+    if (!el) return true
+    return el === frameRef.current
   }
 
   useEffect(() => {
@@ -288,6 +300,7 @@ export function PresentationViewer({
   function openDrawer() {
     clearHoverTimer()
     clearCloseTimer()
+    setBarsVisible(false)
     setDrawerOpen(true)
   }
 
@@ -379,6 +392,7 @@ export function PresentationViewer({
       )}
       {sourceUrl ? (
         <iframe
+          ref={frameRef}
           title={presentation.file_name}
           src={sourceUrl}
           className="absolute inset-0 h-full w-full border-0"
@@ -397,7 +411,7 @@ export function PresentationViewer({
               if (openGroupId) return
               clearCloseTimer()
               clearHoverTimer()
-              hoverTimerRef.current = setTimeout(() => setDrawerOpen(true), 600)
+              hoverTimerRef.current = setTimeout(() => openDrawer(), 300)
             }}
             onMouseLeave={() => {
               clearHoverTimer()
@@ -426,9 +440,10 @@ export function PresentationViewer({
             onMouseEnter={() => {
               clearCloseTimer()
             }}
-            onMouseLeave={() => {
+            onMouseLeave={(e) => {
               clearHoverTimer()
               if (openGroupId || showQr) return
+              if (!pointerOverPresentationFrame(e)) return
               clearCloseTimer()
               closeTimerRef.current = setTimeout(() => collapseDrawer(), 1000)
             }}
@@ -539,7 +554,7 @@ export function PresentationViewer({
               className="absolute inset-y-0 left-6 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8"
               onMouseEnter={() => {
                 clearCloseTimer()
-                if (!drawerOpen) setDrawerOpen(true)
+                if (!drawerOpen) openDrawer()
               }}
             >
               {orderedGroups.slice(0, 4).map((number) => {
@@ -570,7 +585,7 @@ export function PresentationViewer({
               className="absolute inset-y-0 right-0 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8"
               onMouseEnter={() => {
                 clearCloseTimer()
-                if (!drawerOpen) setDrawerOpen(true)
+                if (!drawerOpen) openDrawer()
               }}
             >
               {orderedGroups.slice(4, 8).map((number) => {
