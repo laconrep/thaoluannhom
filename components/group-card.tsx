@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import type { AnnotationRow, SessionGroupRow, SubmissionFile, SubmissionRow } from "@/lib/types"
 import { Card } from "@/components/ui/card"
 import {
@@ -53,6 +54,8 @@ export function GroupCardsGrid({
   onMaximize?: (index: number) => void
   compact?: boolean
 }) {
+  const [confirmGroupId, setConfirmGroupId] = useState<string | null>(null)
+
   return (
     <div
       className={`grid ${colsClass ?? "grid-cols-3"} gap-2.5 ${
@@ -65,11 +68,15 @@ export function GroupCardsGrid({
         const files = getFiles(sub)
         const hasContent = files.length > 0 || !!sub?.text_content
         const isLive = !!liveMap[g.id]
+        const confirming = confirmGroupId === g.id
         return (
           <Card
             key={g.id}
             className="group overflow-hidden hover:ring-2 hover:ring-primary/40 transition cursor-pointer flex flex-col float-card"
-            onClick={() => onOpen(g.id)}
+            onClick={() => {
+              setConfirmGroupId(null)
+              onOpen(g.id)
+            }}
           >
             <div className="border-b px-3 py-2 flex items-center justify-between gap-2 bg-card">
               <div className="flex items-center gap-2 min-w-0">
@@ -88,18 +95,47 @@ export function GroupCardsGrid({
                     {ann.score} đ
                   </span>
                 )}
-                {g.claimed && onUnlock && (
-                  <button
-                    type="button"
-                    title="Mở lại nhóm"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onUnlock(g)
-                    }}
-                    className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-muted"
-                  >
-                    <Unlock className="size-3.5" aria-hidden="true" />
-                  </button>
+                {g.claimed && onUnlock && confirming ? (
+                  <>
+                    <button
+                      type="button"
+                      title="Mở lại nhóm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setConfirmGroupId(null)
+                        onUnlock(g)
+                      }}
+                      className="rounded bg-destructive text-white px-1.5 py-0.5 text-[10px] font-semibold hover:bg-destructive/90"
+                    >
+                      Mở lại
+                    </button>
+                    <button
+                      type="button"
+                      title="Hủy"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setConfirmGroupId(null)
+                      }}
+                      className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted/70"
+                    >
+                      Hủy
+                    </button>
+                  </>
+                ) : (
+                  g.claimed &&
+                  onUnlock && (
+                    <button
+                      type="button"
+                      title="Mở lại nhóm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setConfirmGroupId(g.id)
+                      }}
+                      className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-muted"
+                    >
+                      <Unlock className="size-3.5" aria-hidden="true" />
+                    </button>
+                  )
                 )}
               </div>
             </div>
