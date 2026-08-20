@@ -411,7 +411,7 @@ export function PresentationViewer({
               if (openGroupId) return
               clearCloseTimer()
               clearHoverTimer()
-              hoverTimerRef.current = setTimeout(() => openDrawer(), 300)
+              hoverTimerRef.current = setTimeout(() => openDrawer(), 1500)
             }}
             onMouseLeave={() => {
               clearHoverTimer()
@@ -551,8 +551,9 @@ export function PresentationViewer({
           {/* Thanh nhóm bên trái (nhóm 1-4) */}
           {(status === "running" || barsOnCollapse) && barsVisible && !projectionEnded && (
             <div
-              className="absolute inset-y-0 left-6 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8"
+              className="absolute inset-y-0 left-10 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8"
               onMouseEnter={() => {
+                clearHoverTimer()
                 clearCloseTimer()
               }}
             >
@@ -583,6 +584,7 @@ export function PresentationViewer({
             <div
               className="absolute inset-y-0 right-0 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8"
               onMouseEnter={() => {
+                clearHoverTimer()
                 clearCloseTimer()
               }}
             >
