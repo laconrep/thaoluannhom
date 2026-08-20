@@ -554,7 +554,6 @@ export function PresentationViewer({
               className="absolute inset-y-0 left-6 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8"
               onMouseEnter={() => {
                 clearCloseTimer()
-                if (!drawerOpen) openDrawer()
               }}
             >
               {orderedGroups.slice(0, 4).map((number) => {
@@ -585,7 +584,6 @@ export function PresentationViewer({
               className="absolute inset-y-0 right-0 z-20 flex w-[3vw] flex-col justify-center gap-[4.4px] py-8"
               onMouseEnter={() => {
                 clearCloseTimer()
-                if (!drawerOpen) openDrawer()
               }}
             >
               {orderedGroups.slice(4, 8).map((number) => {
