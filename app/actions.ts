@@ -263,37 +263,175 @@ export async function addClassGroupAction(classId: string) {
   revalidatePath(`/classes/${classId}/roster`)
 }
 
-// Chuyển 1 HS sang nhóm mới; nếu HS đang ở nhóm khác trong cùng class, gỡ khỏi nhóm cũ
-export async function moveStudentToGroupAction(
-  studentId: string,
+// Chuyển nhiều HS sang nhóm mới; nếu HS đang ở nhóm khác trong cùng class, gỡ khỏi nhóm cũ.
+// Nếu HS bị chuyển là leader của nhóm cũ → xóa leader ở nhóm đó trước khi gỡ thành viên.
+export async function moveStudentsToGroupAction(
+  studentIds: string[],
   targetGroupId: string | null,
   classId: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createClient()
 
-  // Gỡ HS khỏi tất cả nhóm hiện tại trong lớp
+  if (studentIds.length === 0) return { ok: true }
+
+  // Tìm các nhóm trong lớp mà các HS này đang ở
   const { data: existing } = await supabase
     .from("class_group_members")
-    .select("class_group_id, class_groups!inner(class_id)")
-    .eq("student_id", studentId)
+    .select("class_group_id, student_id, class_groups!inner(class_id)")
+    .in("student_id", studentIds)
     .eq("class_groups.class_id", classId)
-  const existingIds = (existing ?? []).map((e: any) => e.class_group_id)
-  if (existingIds.length > 0) {
+  const rows = existing ?? []
+
+  // Nếu HS nào đó đang là leader của nhóm cũ → gỡ leader (set null) trước
+  const movedStudentIds = new Set(studentIds)
+  const groupIds = [...new Set(rows.map((r: any) => r.class_group_id))]
+  if (groupIds.length > 0) {
+    const { data: leaders } = await supabase
+      .from("class_groups")
+      .select("id, leader_student_id")
+      .in("id", groupIds)
+      .not("leader_student_id", "is", null)
+    for (const g of leaders ?? []) {
+      if (movedStudentIds.has(g.leader_student_id)) {
+        await supabase.from("class_groups").update({ leader_student_id: null }).eq("id", g.id)
+      }
+    }
+  }
+
+  // Gỡ HS khỏi tất cả nhóm hiện tại trong lớp
+  if (rows.length > 0) {
     await supabase
       .from("class_group_members")
       .delete()
-      .eq("student_id", studentId)
-      .in("class_group_id", existingIds)
+      .in("student_id", studentIds)
+      .in(
+        "class_group_id",
+        rows.map((r: any) => r.class_group_id),
+      )
   }
 
   if (targetGroupId) {
     const { error } = await supabase
       .from("class_group_members")
-      .insert({ class_group_id: targetGroupId, student_id: studentId })
+      .insert(studentIds.map((sid) => ({ class_group_id: targetGroupId, student_id: sid })))
     if (error) return { ok: false, error: error.message }
   }
 
   revalidatePath(`/classes/${classId}/roster`)
+  return { ok: true }
+}
+
+// Chuyển 1 HS sang nhóm mới (wrapper của moveStudentsToGroupAction)
+export async function moveStudentToGroupAction(
+  studentId: string,
+  targetGroupId: string | null,
+  classId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  return moveStudentsToGroupAction([studentId], targetGroupId, classId)
+}
+
+// Gán/đổi/gỡ nhóm trưởng. Leader phải là thành viên của chính nhóm đó.
+export async function setGroupLeaderAction(
+  groupId: string,
+  leaderStudentId: string | null,
+  classId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient()
+
+  if (leaderStudentId) {
+    // Leader phải là thành viên của nhóm
+    const { data: member } = await supabase
+      .from("class_group_members")
+      .select("student_id")
+      .eq("class_group_id", groupId)
+      .eq("student_id", leaderStudentId)
+      .maybeSingle()
+    if (!member) return { ok: false, error: "Nhóm trưởng phải là thành viên của chính nhóm đó" }
+
+    // Gỡ leadership cũ của HS này ở nhóm khác cùng lớp (tránh vi phạm unique index)
+    const { data: otherGroups } = await supabase
+      .from("class_groups")
+      .select("id")
+      .eq("class_id", classId)
+      .eq("leader_student_id", leaderStudentId)
+      .neq("id", groupId)
+    for (const g of otherGroups ?? []) {
+      await supabase.from("class_groups").update({ leader_student_id: null }).eq("id", g.id)
+    }
+  }
+
+  const { error } = await supabase
+    .from("class_groups")
+    .update({ leader_student_id: leaderStudentId })
+    .eq("id", groupId)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath(`/classes/${classId}/roster`)
+  return { ok: true }
+}
+
+// Nhóm trưởng tự thêm/gỡ thành viên cho nhóm mình (không cần đăng nhập, xác thực qua device_token)
+export async function leaderUpdateGroupMembersAction(input: {
+  classId: string
+  leaderStudentId: string
+  deviceToken: string
+  targetStudentId: string
+  action: "add" | "remove"
+}): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient()
+
+  // Xác thực leader + device_token
+  const { data: leader } = await supabase
+    .from("students")
+    .select("id")
+    .eq("id", input.leaderStudentId)
+    .eq("class_id", input.classId)
+    .eq("device_token", input.deviceToken)
+    .maybeSingle()
+  if (!leader) return { ok: false, error: "Không xác thực được nhóm trưởng" }
+
+  // Tìm nhóm của leader
+  const { data: leaderGroup } = await supabase
+    .from("class_group_members")
+    .select("class_group_id, class_groups!inner(leader_student_id)")
+    .eq("student_id", input.leaderStudentId)
+    .eq("class_groups.leader_student_id", input.leaderStudentId)
+    .maybeSingle()
+  if (!leaderGroup) return { ok: false, error: "Bạn không phải nhóm trưởng của nhóm nào" }
+  const groupId = leaderGroup.class_group_id
+
+  if (input.action === "add") {
+    if (input.targetStudentId === input.leaderStudentId) {
+      return { ok: false, error: "Bạn đã ở trong nhóm của mình" }
+    }
+    // HS đang ở nhóm khác trong cùng lớp → chặn
+    const { data: existing } = await supabase
+      .from("class_group_members")
+      .select("class_group_id, class_groups!inner(class_id)")
+      .eq("student_id", input.targetStudentId)
+      .eq("class_groups.class_id", input.classId)
+      .maybeSingle()
+    if (existing) {
+      return { ok: false, error: "Chỉ giáo viên mới đổi được học sinh đã ở nhóm khác" }
+    }
+    const { error } = await supabase
+      .from("class_group_members")
+      .insert({ class_group_id: groupId, student_id: input.targetStudentId })
+    if (error) return { ok: false, error: error.message }
+  } else {
+    // remove: chỉ gỡ thành viên trong nhóm mình, không cho gỡ chính mình
+    if (input.targetStudentId === input.leaderStudentId) {
+      return { ok: false, error: "Nhóm trưởng không thể tự gỡ mình" }
+    }
+    const { error } = await supabase
+      .from("class_group_members")
+      .delete()
+      .eq("class_group_id", groupId)
+      .eq("student_id", input.targetStudentId)
+    if (error) return { ok: false, error: error.message }
+  }
+
+  revalidatePath(`/c/${input.classId}`)
   return { ok: true }
 }
 

@@ -98,7 +98,7 @@ Sửa **`app/c/[token]/page.tsx`** + **`class-lobby.tsx`**:
 ## TIẾN ĐỘ
 
 - [x] **PHẦN 1 — DB** (`scripts/060_group_leaders.sql`)
-- [ ] **PHẦN 2 — Server actions** (`app/actions.ts`)
+- [x] **PHẦN 2 — Server actions** (`app/actions.ts`)
 - [ ] **PHẦN 3 — Phía GV** (`roster-view.tsx` + `roster/page.tsx`)
 - [ ] **PHẦN 4 — Phía HS + kiểm thử** (`class-lobby.tsx` + `c/[token]/page.tsx` + eslint/tsc)
 
@@ -117,18 +117,30 @@ Sửa **`app/c/[token]/page.tsx`** + **`class-lobby.tsx`**:
 - KHÔNG cần sửa publication: `class_groups` đã có trong `supabase_realtime` từ `scripts/010_class_groups.sql`.
 - Lưu ý: code Phần 1-3 trước đó đã bị mất khỏi repo (chưa từng commit) → các phiên được code lại từ đầu.
 
+### Phiên 2 — Đã hoàn thành Phần 2 (Server actions)
+- Sửa `app/actions.ts` (commit `phiên 2` trên nhánh `260821-feat-code-improvements`):
+  - `moveStudentsToGroupAction(studentIds, targetGroupId|null, classId)`: di chuyển nhiều HS; **xóa `leader_student_id` của nhóm cũ TRƯỚC khi gỡ thành viên** nếu HS đó là leader.
+  - `moveStudentToGroupAction` → wrapper gọi `moveStudentsToGroupAction([studentId], ...)`.
+  - `setGroupLeaderAction(groupId, leaderStudentId|null, classId)`: kiểm tra leader là thành viên của nhóm; gỡ leadership cũ của HS đó ở nhóm khác cùng lớp (tránh vi phạm unique index); null → gỡ leader.
+  - `leaderUpdateGroupMembersAction({classId, leaderStudentId, deviceToken, targetStudentId, action})`: xác thực leader + device_token qua bảng `students`; chỉ add HS chưa thuộc nhóm nào (ở nhóm khác → chặn, "Chỉ giáo viên mới đổi được"); leader không tự gỡ mình; remove chỉ áp dụng cho thành viên trong nhóm mình.
+  - Đã chạy `pnpm exec tsc --noEmit` (exit 0) + `pnpm exec eslint app/actions.ts` (sạch).
+
 ---
 
 ## YÊU CẦU PHIÊN SAU
 
-### Phiên 2 — Server actions (`app/actions.ts`)
+### Phiên 3 — Phía GV (`app/classes/[id]/roster/page.tsx` + `roster-view.tsx`)
 Trước khi code, đọc:
-- `app/actions.ts` — cấu trúc các action hiện có (`moveStudentToGroupAction`, `createClassGroupAction`, v.v.), pattern `createClient()` từ `@/lib/supabase/server`, cách trả `{ ok, error? }`.
-- `scripts/010_class_groups.sql` — trigger `enforce_single_class_group` (1 HS 1 nhóm/lớp).
+- `app/classes/[id]/roster/page.tsx` — server component, query `students` + `class_groups` + `class_group_members`, truyền props xuống `RosterView`.
+- `app/classes/[id]/roster/roster-view.tsx` — `RosterView` client component, hiện có kéo-thả 1 HS, các action `moveStudentToGroupAction`, `setGroupMembersAction`, `removeClassGroupAction`, `addClassGroupAction`.
+- `app/actions.ts` — đã có sẵn từ Phần 2: `moveStudentsToGroupAction`, `setGroupLeaderAction`.
 
 Công việc cần làm:
-1. `setGroupLeaderAction(groupId, leaderStudentId | null, classId)` → gán/đổi/gỡ leader; khi đổi: xóa leader cũ (null) trước; kiểm tra leader là thành viên của nhóm (trùng trigger, phòng khi trigger chưa deploy).
-2. `moveStudentsToGroupAction(studentIds: string[], targetGroupId: string | null, classId)` → di chuyển nhiều HS; nếu HS là leader của nhóm cũ → set `leader_student_id = null` ở nhóm đó trước khi gỡ thành viên.
-3. Refactor `moveStudentToGroupAction` thành wrapper gọi `moveStudentsToGroupAction([studentId], ...)`.
-4. `leaderUpdateGroupMembersAction({ classId, leaderStudentId, deviceToken, targetStudentId, action: "add"|"remove" })` → không-đăng-nhập: tìm class bằng classId, đối chiếu device_token của leader trong bảng students; chỉ add HS chưa thuộc nhóm nào (ở nhóm khác → chặn); leader không tự gỡ mình.
-5. Chạy `pnpm exec tsc --noEmit` + `pnpm exec eslint app/actions.ts` → sạch, rồi cập nhật bangiao.md và commit.
+1. `page.tsx`: select `class_groups` thêm `leader_student_id`.
+2. `roster-view.tsx`:
+   - Type `Group` thêm `leader_student_id: string | null`.
+   - State mới: `selectedStudentIds`, `leaderDialogGroupId`, `bulkMoveConfirm`.
+   - Đa chọn: Ctrl/Cmd+click chọn/bỏ chọn (ring highlight), nút "Bỏ chọn" + đếm "Đã chọn N em"; kéo thẻ đã chọn → dataTransfer mang JSON danh sách id → thả vào nhóm → thêm tất cả; HS ở nhóm khác → dialog xác nhận; kéo thẻ chưa chọn giữ hành vi đơn cũ.
+   - Mỗi nhóm: nút Crown mở dialog gán leader (chọn 1 HS trong nhóm, click lại để gỡ); badge Crown cạnh tên leader ở cột nhóm và thẻ HS trái.
+   - Cập nhật modal hướng dẫn (localStorage `roster_intro_seen_${classId}`) từ 4 → 7 bước.
+3. Chạy `pnpm exec tsc --noEmit` + `pnpm exec eslint` trên 2 file roster → sạch, rồi cập nhật bangiao.md và commit.
