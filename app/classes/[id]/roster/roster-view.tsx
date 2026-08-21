@@ -42,6 +42,7 @@ import {
   FileSpreadsheet,
   Upload,
   FileCheck2,
+  Download,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { groupCardStyle, groupPillStyle } from "@/lib/group-colors"
@@ -75,6 +76,7 @@ export function RosterView({
   const [importOpen, setImportOpen] = useState(false)
   const [importPreview, setImportPreview] = useState<string[] | null>(null)
   const [importFileName, setImportFileName] = useState("")
+  const [importMerged, setImportMerged] = useState(false)
   const [importBusy, setImportBusy] = useState(false)
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null)
   const [introOpen, setIntroOpen] = useState(false)
@@ -212,24 +214,63 @@ export function RosterView({
     )
   }
 
+  // Tải mẫu Excel: 1 cột "Họ và tên" + vài dòng ví dụ (đúng định dạng web app nhận).
+  function downloadTemplate() {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Họ và tên"],
+      ["Nguyễn Văn An"],
+      ["Trần Thị Bình"],
+      ["Lê Quang Minh"],
+      ["Phạm Thu Hà"],
+    ])
+    ws["!cols"] = [{ wch: 28 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Danh sách")
+    XLSX.writeFile(wb, "danh-sach-hoc-sinh-mau.xlsx")
+  }
+
   async function handleImportFile(file: File) {
     setImportBusy(true)
     setImportFileName(file.name)
     setImportPreview(null)
+    setImportMerged(false)
     try {
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(buf, { type: "array" })
       const ws = wb.Sheets[wb.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false })
-      let names = rows
-        .map((r) => String(r?.[0] ?? "").trim())
-        .filter((n) => n.length > 0)
-      // Nếu dòng đầu trông giống tiêu đề thì bỏ qua
-      if (names.length > 0 && looksLikeHeader(names[0])) names = names.slice(1)
+      let merged = false
+      const names: string[] = []
+      rows.forEach((r, ri) => {
+        if (!Array.isArray(r)) return
+        const cells = r
+          .map((c) => String(c ?? "").trim())
+          .filter((c) => c.length > 0)
+        if (cells.length === 0) return
+        // Dòng tiêu đề (STT, Họ và tên, Họ và chữ lót, Tên...) → bỏ qua
+        if (ri === 0 && cells.some((c) => looksLikeHeader(c))) return
+        // Bỏ cột STT nếu ô đầu là số thuần và còn ô khác
+        if (cells.length > 1 && /^\d+$/.test(cells[0])) cells.shift()
+        if (cells.length === 0) return
+        // Nhiều ô (≥2) → tự gộp, khớp file 2 cột "Họ và chữ lót" + "Tên";
+        // đúng mẫu 1 cột thì dùng luôn tên đầy đủ.
+        let name: string
+        if (cells.length > 1) {
+          name = cells.join(" ")
+          merged = true
+        } else {
+          name = cells[0]
+        }
+        name = name.replace(/\s+/g, " ").trim()
+        if (name.length > 0) names.push(name)
+      })
       if (names.length === 0) {
-        toast.error("Không tìm thấy cột tên nào. Hãy để họ tên ở cột đầu tiên.")
+        toast.error(
+          "Không tìm thấy cột tên nào. Hãy để họ tên ở cột đầu tiên hoặc tải mẫu Excel để tham khảo.",
+        )
         return
       }
+      setImportMerged(merged)
       setImportPreview(names)
       setImportOpen(true)
     } catch {
@@ -250,6 +291,7 @@ export function RosterView({
     setImportOpen(false)
     setImportPreview(null)
     setImportFileName("")
+    setImportMerged(false)
   }
 
   function onChangeCapacity(delta: number) {
@@ -486,6 +528,10 @@ export function RosterView({
                 <ListPlus className="size-4 mr-1" aria-hidden="true" />
                 Dán danh sách
               </Button>
+              <Button variant="outline" size="sm" onClick={downloadTemplate}>
+                <Download className="size-4 mr-1" aria-hidden="true" />
+                Tải mẫu Excel
+              </Button>
               <Button variant="outline" size="sm" onClick={() => fileImportRef.current?.click()} disabled={importBusy}>
                 {importBusy ? (
                   <Spinner className="size-4 mr-1" />
@@ -519,6 +565,11 @@ export function RosterView({
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Dự kiến ghi tên theo thứ tự ô 1, 2, 3...{importPreview.length > capacity ? ` Sĩ số sẽ tăng lên ${importPreview.length}.` : ""}
+                  {importMerged && (
+                    <span className="text-primary">
+                      {" "}Đã tự gộp cột &ldquo;Họ và chữ lót&rdquo; + &ldquo;Tên&rdquo;.
+                    </span>
+                  )}
                 </p>
                 <ul className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
                   {importPreview.map((n, i) => (
@@ -543,6 +594,7 @@ export function RosterView({
                       setImportOpen(false)
                       setImportPreview(null)
                       setImportFileName("")
+                      setImportMerged(false)
                     }}
                   >
                     Hủy
