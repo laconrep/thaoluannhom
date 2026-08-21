@@ -48,6 +48,7 @@ import {
   Crown,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { fetchClassGroups } from "@/lib/class-groups"
 import { groupCardStyle, groupPillStyle } from "@/lib/group-colors"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -181,12 +182,8 @@ export function RosterView({
       .subscribe()
 
     async function refetchGroups() {
-      const { data } = await supabase
-        .from("class_groups")
-        .select("id, group_number, label, name, color, leader_student_id")
-        .eq("class_id", classId)
-        .order("group_number")
-      if (data) setGroups(data as Group[])
+      const data = await fetchClassGroups(supabase, classId)
+      setGroups(data)
     }
     async function refetchMembers() {
       const { data } = await supabase

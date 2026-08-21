@@ -1,22 +1,19 @@
 import { createClient } from "@/lib/supabase/server"
+import { fetchClassGroups } from "@/lib/class-groups"
 import { RosterView } from "./roster-view"
 
 export default async function RosterPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: cls }, { data: students }, { data: groups }, { data: members }] = await Promise.all([
+  const [{ data: cls }, { data: students }, groups, { data: members }] = await Promise.all([
     supabase.from("classes").select("id, name, capacity").eq("id", id).single(),
     supabase
       .from("students")
       .select("id, slot_number, name")
       .eq("class_id", id)
       .order("slot_number"),
-    supabase
-      .from("class_groups")
-      .select("id, group_number, label, name, color, leader_student_id")
-      .eq("class_id", id)
-      .order("group_number"),
+    fetchClassGroups(supabase, id),
     supabase
       .from("class_group_members")
       .select("class_group_id, student_id, students!inner(class_id)")

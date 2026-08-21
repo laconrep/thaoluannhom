@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
+import { fetchClassGroups } from "@/lib/class-groups"
 import { ClassLobby } from "./class-lobby"
 
 export default async function StudentLanding({
@@ -16,7 +17,7 @@ export default async function StudentLanding({
     .single()
   if (!cls) notFound()
 
-  const [{ data: students }, { data: sessions }, { data: groups }, { data: members }] =
+  const [{ data: students }, { data: sessions }, groups, { data: members }] =
     await Promise.all([
       supabase
         .from("students")
@@ -29,11 +30,7 @@ export default async function StudentLanding({
         .eq("class_id", cls.id)
         .in("status", ["idle", "running"])
         .order("created_at", { ascending: false }),
-      supabase
-        .from("class_groups")
-        .select("id, name, color, leader_student_id")
-        .eq("class_id", cls.id)
-        .order("group_number"),
+      fetchClassGroups(supabase, cls.id),
       supabase
         .from("class_group_members")
         .select("class_group_id, student_id, class_groups!inner(class_id)")
