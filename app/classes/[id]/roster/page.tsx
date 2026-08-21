@@ -14,7 +14,7 @@ export default async function RosterPage({ params }: { params: Promise<{ id: str
       .order("slot_number"),
     supabase
       .from("class_groups")
-      .select("id, group_number, label, name, color")
+      .select("id, group_number, label, name, color, leader_student_id")
       .eq("class_id", id)
       .order("group_number"),
     supabase
