@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
+import { fetchClassGroups } from "@/lib/class-groups"
 import { leaderUpdateGroupMembersAction, studentSetNameAction } from "@/app/actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -150,12 +151,8 @@ export function ClassLobby({
       .subscribe()
 
     async function refetchGroups() {
-      const { data } = await supabase
-        .from("class_groups")
-        .select("id, name, color, leader_student_id")
-        .eq("class_id", classId)
-        .order("group_number")
-      if (data) setGroups(data as Group[])
+      const data = await fetchClassGroups(supabase, classId)
+      setGroups(data)
     }
     async function refetchMembers() {
       const { data } = await supabase
