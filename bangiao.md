@@ -100,7 +100,9 @@ Sửa **`app/c/[token]/page.tsx`** + **`class-lobby.tsx`**:
 - [x] **PHẦN 1 — DB** (`scripts/060_group_leaders.sql`)
 - [x] **PHẦN 2 — Server actions** (`app/actions.ts`)
 - [x] **PHẦN 3 — Phía GV** (`roster-view.tsx` + `roster/page.tsx`)
-- [ ] **PHẦN 4 — Phía HS + kiểm thử** (`class-lobby.tsx` + `c/[token]/page.tsx` + eslint/tsc)
+- [x] **PHẦN 4 — Phía HS + kiểm thử** (`class-lobby.tsx` + `c/[token]/page.tsx` + eslint/tsc)
+
+> Toàn bộ 4 phiên đã hoàn thành.
 
 > Mỗi phiên khi hoàn thành sẽ đánh dấu [x] và ghi chi tiết vào phần "Ghi chú phiên vừa rồi" + "Yêu cầu phiên sau" bên dưới.
 
@@ -164,3 +166,22 @@ Công việc cần làm:
 4. Nếu tsc/eslint sạch → đánh dấu xong Phần 4, cập nhật `bangiao.md` và ghi chú rằng toàn bộ 4 phiên đã hoàn thành; nhắc commit code tính năng trên nhánh `260821-feat-code-improvements`.
 
 Lưu ý: ràng buộc "HS ở nhóm khác thì chặn" đã xử lý phía server (`leaderUpdateGroupMembersAction`) — UI chỉ cần hiển thị khóa. Không phá vỡ luồng claim slot / đổi ô hiện tại.
+
+### Phiên 4 — Đã hoàn thành Phần 4 (Phía HS + kiểm thử)
+- Sửa trên nhánh `260821-feat-code-improvements` (commit `phiên 4`):
+  - `app/c/[token]/page.tsx`: thêm fetch `class_groups` (select `id, name, color, leader_student_id`) + `class_group_members` (select `class_group_id, student_id`, filter qua `class_groups!inner(class_id)`); truyền xuống `ClassLobby` dưới props `groups` + `members`.
+  - `app/c/[token]/class-lobby.tsx`:
+    - Types mới `Group` (`id, name, color, leader_student_id`) + `GroupMember` (`class_group_id, student_id`); props `groups` + `members` + state tương ứng (khởi tạo từ props).
+    - Realtime: thêm subscribe `class_groups` (filter `class_id`) + `class_group_members` (không filter) trong channel `lobby-${classId}`; khi đổi → `refetchGroups()` / `refetchMembers()`.
+    - Hàm helper: `myGroup` (nhóm chứa mình), `myLeaderGroup` (nhóm mình làm trưởng), `studentToGroup` (map student→group), `leaderAdd`/`leaderRemove` (gọi `leaderUpdateGroupMembersAction`).
+    - UI: nếu `myLeaderGroup` → Card nổi bật (viền amber, Crown) + nút "Chọn thành viên" mở Dialog danh sách cả lớp; từng thẻ HS: chưa phân nhóm → nút "Thêm vào nhóm" (add); ở nhóm mình → "Nhóm em" + nút gỡ (remove, không cho gỡ chính mình); ở nhóm khác → `Lock` + tên nhóm, không click được.
+    - Import thêm `Crown`, `Lock`, `Minus` (lucide-react), `Dialog`/`DialogContent`/`DialogHeader`/`DialogTitle` (`@/components/ui/dialog`), `AvatarInitials`, `toast` (sonner), `cn`.
+  - Đã chạy `pnpm exec tsc --noEmit` (exit 0) + `pnpm exec eslint` trên 2 file HS + `app/actions.ts` (exit 0).
+
+---
+
+## GHI CHÚ CUỐI CÙNG
+
+- Toàn bộ tính năng **nhóm trưởng (group leader)** đã hoàn thành qua 4 phiên trên nhánh `260821-feat-code-improvements`.
+- Các commit: phiên 1 (DB), phiên 2 (actions), phiên 3 (GV), phiên 4 (HS). Mỗi phiên đều chạy `tsc --noEmit` + `eslint` sạch trước khi commit.
+- Trước khi đưa vào thực tế cần **chạy migration `scripts/060_group_leaders.sql`** trên Supabase (thêm cột `leader_student_id`, index, trigger).

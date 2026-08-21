@@ -1,15 +1,27 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
-import { studentSetNameAction } from "@/app/actions"
+import { leaderUpdateGroupMembersAction, studentSetNameAction } from "@/app/actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { AvatarInitials } from "@/components/avatar-initials"
 import { useCountdown, formatClock } from "@/lib/use-countdown"
-import { ArrowRight, GraduationCap, ClipboardList, Users } from "lucide-react"
+import {
+  ArrowRight,
+  Crown,
+  GraduationCap,
+  ClipboardList,
+  Lock,
+  Users,
+  Minus,
+} from "lucide-react"
+import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 type Student = {
   id: string
@@ -26,6 +38,8 @@ type Session = {
   ends_at: string | null
   duration_seconds: number
 }
+type Group = { id: string; name: string; color: string; leader_student_id: string | null }
+type GroupMember = { class_group_id: string; student_id: string }
 
 function getDeviceToken() {
   if (typeof window === "undefined") return ""
@@ -43,18 +57,25 @@ export function ClassLobby({
   token,
   students: initialStudents,
   sessions: initialSessions,
+  groups: initialGroups,
+  members: initialMembers,
 }: {
   classId: string
   className: string
   token: string
   students: Student[]
   sessions: Session[]
+  groups: Group[]
+  members: GroupMember[]
 }) {
   const [students, setStudents] = useState(initialStudents)
   const [sessions, setSessions] = useState(initialSessions)
+  const [groups, setGroups] = useState<Group[]>(initialGroups)
+  const [members, setMembers] = useState<GroupMember[]>(initialMembers)
   const [myStudentId, setMyStudentId] = useState<string | null>(null)
   const [name, setName] = useState("")
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null)
+  const [leaderOpen, setLeaderOpen] = useState(false)
   const [saving, startTransition] = useTransition()
 
   // Load identity from localStorage
@@ -112,7 +133,37 @@ export function ClassLobby({
           }
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "class_groups", filter: `class_id=eq.${classId}` },
+        () => {
+          refetchGroups()
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "class_group_members" },
+        () => {
+          refetchMembers()
+        },
+      )
       .subscribe()
+
+    async function refetchGroups() {
+      const { data } = await supabase
+        .from("class_groups")
+        .select("id, name, color, leader_student_id")
+        .eq("class_id", classId)
+        .order("group_number")
+      if (data) setGroups(data as Group[])
+    }
+    async function refetchMembers() {
+      const { data } = await supabase
+        .from("class_group_members")
+        .select("class_group_id, student_id, class_groups!inner(class_id)")
+        .eq("class_groups.class_id", classId)
+      if (data) setMembers(data as GroupMember[])
+    }
     return () => {
       supabase.removeChannel(ch)
     }
@@ -134,6 +185,52 @@ export function ClassLobby({
     localStorage.removeItem(`class_${classId}_student`)
     setMyStudentId(null)
     setSelectedSlot(null)
+  }
+
+  // Nhóm chứa mình (qua members)
+  const myGroup = useMemo(() => {
+    if (!myStudentId) return null
+    const m = members.find((x) => x.student_id === myStudentId)
+    return m ? groups.find((g) => g.id === m.class_group_id) ?? null : null
+  }, [myStudentId, members, groups])
+
+  // Nhóm mà mình làm nhóm trưởng
+  const myLeaderGroup = useMemo(
+    () => (myStudentId ? groups.find((g) => g.leader_student_id === myStudentId) ?? null : null),
+    [myStudentId, groups],
+  )
+
+  // Map student_id -> group (để xác định trạng thái từng thẻ HS)
+  const studentToGroup = useMemo(() => {
+    const m = new Map<string, Group>()
+    for (const g of groups) {
+      for (const mem of members) {
+        if (mem.class_group_id === g.id) m.set(mem.student_id, g)
+      }
+    }
+    return m
+  }, [groups, members])
+
+  async function leaderAdd(targetStudentId: string) {
+    const res = await leaderUpdateGroupMembersAction({
+      classId,
+      leaderStudentId: myStudentId!,
+      deviceToken: getDeviceToken(),
+      targetStudentId,
+      action: "add",
+    })
+    if (!res.ok) toast.error(res.error ?? "Không thêm được")
+  }
+
+  async function leaderRemove(targetStudentId: string) {
+    const res = await leaderUpdateGroupMembersAction({
+      classId,
+      leaderStudentId: myStudentId!,
+      deviceToken: getDeviceToken(),
+      targetStudentId,
+      action: "remove",
+    })
+    if (!res.ok) toast.error(res.error ?? "Không gỡ được")
   }
 
   if (!myStudentId) {
@@ -226,8 +323,29 @@ export function ClassLobby({
           </CardHeader>
         </Card>
 
-        <h2 className="text-sm font-semibold text-muted-foreground">Các phiên đang mở</h2>
+        {myLeaderGroup && (
+          <Card className="border-amber-300 bg-amber-50/60">
+            <CardHeader className="flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 font-heading">
+                  <Crown className="size-5 text-amber-500" aria-hidden="true" />
+                  Nhóm trưởng {myLeaderGroup.name}
+                </CardTitle>
+                <CardDescription>
+                  {myGroup?.id === myLeaderGroup.id
+                    ? "Em đang ở nhóm của mình. Bấm để chọn thêm thành viên cho cả lớp."
+                    : "Em chưa nằm trong nhóm của mình. Bấm để chọn thành viên."}
+                </CardDescription>
+              </div>
+              <Button onClick={() => setLeaderOpen(true)}>
+                <Users className="size-4 mr-1" aria-hidden="true" />
+                Chọn thành viên
+              </Button>
+            </CardHeader>
+          </Card>
+        )}
 
+        <h2 className="text-sm font-semibold text-muted-foreground">Các phiên đang mở</h2>
         {sessions.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-sm text-muted-foreground">
@@ -251,6 +369,79 @@ export function ClassLobby({
           </Button>
         </div>
       </div>
+
+      {/* Dialog chọn thành viên cho nhóm trưởng */}
+      <Dialog open={leaderOpen} onOpenChange={setLeaderOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-heading">
+              <Crown className="size-5 text-amber-500" aria-hidden="true" />
+              Chọn thành viên cho {myLeaderGroup?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs text-muted-foreground">
+              Bấm vào học sinh chưa có nhóm để thêm vào nhóm của em. Học sinh ở nhóm khác cần giáo
+              viên thay đổi.
+            </p>
+            {students.map((s) => {
+              const stuGroup = studentToGroup.get(s.id)
+              const inMine = stuGroup?.id === myLeaderGroup?.id
+              const isMe = s.id === myStudentId
+              return (
+                <div
+                  key={s.id}
+                  className={cn(
+                    "flex items-center gap-2.5 rounded-lg border px-2.5 py-2",
+                    inMine ? "border-amber-300 bg-amber-50/50" : "border-border bg-card",
+                  )}
+                >
+                  <AvatarInitials name={s.name} seed={`${classId}-${s.slot_number}`} size="xs" />
+                  <span className="text-[10px] tabular-nums font-semibold bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
+                    {s.slot_number}
+                  </span>
+                  <span className="flex-1 text-sm font-medium truncate">
+                    {s.name?.trim() || "—"}
+                  </span>
+                  {stuGroup ? (
+                    inMine ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-amber-700">Nhóm em</span>
+                        {!isMe && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-6"
+                            aria-label={`Gỡ ${s.name} khỏi nhóm`}
+                            onClick={() => leaderRemove(s.id)}
+                          >
+                            <Minus className="size-3.5 text-destructive" aria-hidden="true" />
+                          </Button>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <Lock className="size-3.5" aria-hidden="true" />
+                        {stuGroup.name}
+                      </span>
+                    )
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2.5"
+                      disabled={!s.name?.trim()}
+                      onClick={() => leaderAdd(s.id)}
+                    >
+                      Thêm vào nhóm
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
     </main>
   )
 }
