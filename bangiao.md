@@ -96,7 +96,7 @@ Sửa **`app/c/[token]/page.tsx`** + **`class-lobby.tsx`**:
 
 ## TIẾN ĐỘ
 
-- [ ] **PHẦN 1 — DB** (`scripts/060_group_leaders.sql`)
+- [x] **PHẦN 1 — DB** (`scripts/060_group_leaders.sql`)
 - [ ] **PHẦN 2 — Server actions** (`app/actions.ts`)
 - [ ] **PHẦN 3 — Phía GV** (`roster-view.tsx` + `roster/page.tsx`)
 - [ ] **PHẦN 4 — Phía HS + kiểm thử** (`class-lobby.tsx` + `c/[token]/page.tsx` + eslint/tsc)
@@ -107,10 +107,33 @@ Sửa **`app/c/[token]/page.tsx`** + **`class-lobby.tsx`**:
 
 ## GHI CHÚ PHIÊN VỪA RỒI
 
-(trống — phiên đầu tiên)
+### Phiên 1 — Đã hoàn thành Phần 1 (DB)
+- Tạo file `scripts/060_group_leaders.sql` trên nhánh `260821-feat-code-improvements`:
+  - `ALTER TABLE class_groups ADD COLUMN leader_student_id uuid REFERENCES students(id) ON DELETE SET NULL` (idempotent, có `if not exists`).
+  - Index `class_groups_leader_idx` trên `leader_student_id`.
+  - Unique index `class_groups_class_leader_uidx` trên `(class_id, leader_student_id)` `WHERE leader_student_id IS NOT NULL` → 1 HS chỉ làm leader tối đa 1 nhóm/lớp.
+  - Function + trigger `enforce_leader_in_group` (BEFORE INSERT OR UPDATE OF leader_student_id): nếu `NEW.leader_student_id` NOT NULL thì kiểm tra tồn tại trong `class_group_members` của đúng nhóm; không có → `raise exception 'Nhóm trưởng phải là thành viên của chính nhóm đó'`. Với NULL thì bỏ qua (cho phép gỡ leader).
+- KHÔNG cần sửa publication: `class_groups` đã có trong `supabase_realtime` từ `scripts/010_class_groups.sql`.
+- CHƯA commit code vào nhánh tính năng.
 
 ---
 
 ## YÊU CẦU PHIÊN SAU
 
-(trống — phiên đầu tiên sẽ ghi khi kết thúc)
+### Phiên 2 — Server actions (`app/actions.ts`)
+Trước khi code, đọc `app/actions.ts` (934 dòng). Các action nhóm đang nằm trong mục `/* ============ CLASS GROUPS ============ */` (dòng ~243-320). Những thứ ĐÃ CÓ sẵn (không tạo lại):
+- `addClassGroupAction(classId)`, `removeClassGroupAction(classGroupId, classId)`, `setGroupMembersAction(classGroupId, studentIds, classId)` (đang dùng delete+insert toàn bộ — KHÔNG cần dùng cho tính năng này), `moveStudentToGroupAction(studentId, targetGroupId|null, classId)` (đơn HS, dòng 267-298).
+- Mẫu action trả về `Promise<{ ok: boolean; error?: string }>` (xem `moveStudentToGroupAction`).
+- `createClient()` từ `@/lib/supabase/server`; `revalidatePath('/classes/${classId}/roster')` sau khi đổi.
+
+Công việc cần làm:
+1. `setGroupLeaderAction(groupId: string, leaderStudentId: string | null, classId: string)`:
+   - Xóa leader cũ: `update class_groups set leader_student_id = null` cho group đang giữ `leader_student_id = leaderStudentId` (cùng class) — tránh vi phạm unique index. Nếu `leaderStudentId` null: chỉ set null cho chính groupId.
+   - Kiểm tra leader là thành viên của nhóm: query `class_group_members` where `class_group_id = groupId and student_id = leaderStudentId`.
+   - Update `leader_student_id` cho groupId.
+2. `moveStudentsToGroupAction(studentIds: string[], targetGroupId: string | null, classId: string)`: vòng lặp mỗi HS — gỡ khỏi các nhóm cũ (đã có sẵn logic đơn HS), NHƯNG trước khi gỡ, nếu HS đang là leader của nhóm cũ thì `leader_student_id = null` ở nhóm đó trước (tránh trigger chặn vì leader không còn là thành viên).
+3. Refactor `moveStudentToGroupAction` thành wrapper gọi `moveStudentsToGroupAction([studentId], targetGroupId, classId)`.
+4. `leaderUpdateGroupMembersAction(args: { classId: string; leaderStudentId: string; deviceToken: string; targetStudentId: string; action: "add" | "remove" })`: xác thực theo mô hình không-đăng-nhập — đối chiếu `device_token` của leader trong bảng `students`; tìm group của lớp có `leader_student_id = leaderStudentId`; `add` chỉ khi HS chưa thuộc nhóm nào (đang ở nhóm khác → trả lỗi); `remove` không cho leader gỡ chính mình. Trả `{ ok, error? }`.
+
+Lưu ý trigger mới: khi set leader không phải thành viên → DB raise exception; server action nên tự kiểm tra trước để trả lỗi đẹp.
+
