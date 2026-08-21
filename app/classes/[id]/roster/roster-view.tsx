@@ -7,8 +7,10 @@ import {
   bulkSetNamesAction,
   importStudentsFromListAction,
   moveStudentToGroupAction,
+  moveStudentsToGroupAction,
   removeClassGroupAction,
   setCapacityAction,
+  setGroupLeaderAction,
   updateStudentNameAction,
 } from "@/app/actions"
 import { Button } from "@/components/ui/button"
@@ -43,6 +45,7 @@ import {
   Upload,
   FileCheck2,
   Download,
+  Crown,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { groupCardStyle, groupPillStyle } from "@/lib/group-colors"
@@ -53,7 +56,14 @@ import { Spinner } from "@/components/ui/spinner"
 import { useRef } from "react"
 
 type Student = { id: string; slot_number: number; name: string | null }
-type Group = { id: string; group_number: number; label: string; name: string; color: string }
+type Group = {
+  id: string
+  group_number: number
+  label: string
+  name: string
+  color: string
+  leader_student_id: string | null
+}
 
 export function RosterView({
   classId,
@@ -82,6 +92,13 @@ export function RosterView({
   const [introOpen, setIntroOpen] = useState(false)
   const [dragStudentId, setDragStudentId] = useState<string | null>(null)
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null)
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([])
+  const [leaderDialogGroupId, setLeaderDialogGroupId] = useState<string | null>(null)
+  const [bulkMoveConfirm, setBulkMoveConfirm] = useState<{
+    studentIds: string[]
+    fromGroupId: string
+    toGroupId: string
+  } | null>(null)
   const [moveConfirm, setMoveConfirm] = useState<{
     studentId: string
     fromGroupId: string
@@ -166,7 +183,7 @@ export function RosterView({
     async function refetchGroups() {
       const { data } = await supabase
         .from("class_groups")
-        .select("id, group_number, label, name, color")
+        .select("id, group_number, label, name, color, leader_student_id")
         .eq("class_id", classId)
         .order("group_number")
       if (data) setGroups(data as Group[])
@@ -355,6 +372,72 @@ export function RosterView({
     }
   }
 
+  // Áp dụng di chuyển nhiều HS (đã xác nhận)
+  function applyMoveMany(studentIds: string[], toGroupId: string | null) {
+    const idSet = new Set(studentIds)
+    setMemberMap((cur) => {
+      const next: Record<string, string[]> = {}
+      for (const g of groups) {
+        const list = (cur[g.id] ?? []).filter((x) => !idSet.has(x))
+        if (toGroupId && g.id === toGroupId) list.push(...studentIds)
+        next[g.id] = list
+      }
+      return next
+    })
+    startTransition(() => {
+      moveStudentsToGroupAction(studentIds, toGroupId, classId).then((res) => {
+        if (!res.ok) toast.error(res.error ?? "Không di chuyển được")
+        else if (toGroupId) {
+          const g = groups.find((x) => x.id === toGroupId)
+          toast.success(`Đã thêm ${studentIds.length} học sinh vào ${g?.name ?? "nhóm"}`)
+        }
+      })
+    })
+  }
+
+  // Ctrl/Cmd+click chọn/bỏ chọn HS để kéo cụm
+  function toggleSelectStudent(studentId: string) {
+    setSelectedStudentIds((cur) =>
+      cur.includes(studentId) ? cur.filter((x) => x !== studentId) : [...cur, studentId],
+    )
+  }
+
+  // Thả nhiều HS vào nhóm: HS đang ở nhóm khác → xác nhận; còn lại thêm thẳng
+  function handleDropMany(studentIds: string[], toGroupId: string) {
+    const notYet = studentIds.filter((sid) => studentToGroup.get(sid)?.id !== toGroupId)
+    if (notYet.length === 0) {
+      setSelectedStudentIds([])
+      return
+    }
+    const moved = notYet.filter((sid) => !studentToGroup.get(sid))
+    const fromGroupIds = [...new Set(notYet.map((sid) => studentToGroup.get(sid)?.id).filter(Boolean))] as string[]
+    if (moved.length === notYet.length) {
+      // Không ai đang ở nhóm khác → thêm thẳng
+      applyMoveMany(notYet, toGroupId)
+      setSelectedStudentIds([])
+    } else {
+      // Có HS đang ở nhóm khác → hỏi xác nhận
+      setBulkMoveConfirm({
+        studentIds: notYet,
+        fromGroupId: fromGroupIds[0],
+        toGroupId,
+      })
+    }
+  }
+
+  // Gán/gỡ nhóm trưởng
+  function handleSetLeader(groupId: string, leaderStudentId: string | null) {
+    setGroups((cur) =>
+      cur.map((g) => (g.id === groupId ? { ...g, leader_student_id: leaderStudentId } : g)),
+    )
+    startTransition(() => {
+      setGroupLeaderAction(groupId, leaderStudentId, classId).then((res) => {
+        if (!res.ok) toast.error(res.error ?? "Không gán nhóm trưởng được")
+        else toast.success(leaderStudentId ? "Đã gán nhóm trưởng" : "Đã gỡ nhóm trưởng")
+      })
+    })
+  }
+
   const namedCount = students.filter((s) => s.name?.trim()).length
 
   return (
@@ -371,7 +454,7 @@ export function RosterView({
               <Info className="size-5 text-primary" />
               Cách phân học sinh vào nhóm
             </DialogTitle>
-            <DialogDescription>Thầy cô đọc qua 4 bước trước khi bắt đầu.</DialogDescription>
+            <DialogDescription>Thầy cô đọc qua 7 bước trước khi bắt đầu.</DialogDescription>
           </DialogHeader>
           <ol className="space-y-3 text-sm leading-relaxed">
             <li className="flex gap-3">
@@ -408,6 +491,34 @@ export function RosterView({
               <span>
                 <strong>Bấm vào tên nhóm</strong> ở cột phải để mở ra, xem danh sách học sinh trong
                 nhóm đó. Bấm dấu × để gỡ khỏi nhóm.
+              </span>
+            </li>
+            <li className="flex gap-3">
+              <span className="size-6 shrink-0 rounded-full bg-primary text-primary-foreground grid place-items-center text-xs font-bold">
+                5
+              </span>
+              <span>
+                <strong>Gán nhóm trưởng:</strong> bấm nút vương miện 👑 cạnh tên nhóm, chọn 1 học
+                sinh làm nhóm trưởng. Nhóm trưởng được tự chọn thêm thành viên cho nhóm mình.
+              </span>
+            </li>
+            <li className="flex gap-3">
+              <span className="size-6 shrink-0 rounded-full bg-primary text-primary-foreground grid place-items-center text-xs font-bold">
+                6
+              </span>
+              <span>
+                <strong>Chọn nhiều học sinh:</strong> giữ <strong>Ctrl/Cmd</strong> rồi bấm vào thẻ
+                để chọn cùng lúc, sau đó kéo cụm thả vào nhóm. Bấm <strong>Bỏ chọn</strong> để xóa
+                vùng chọn.
+              </span>
+            </li>
+            <li className="flex gap-3">
+              <span className="size-6 shrink-0 rounded-full bg-primary text-primary-foreground grid place-items-center text-xs font-bold">
+                7
+              </span>
+              <span>
+                Học sinh ở nhóm khác khi kéo theo cụm sẽ có <strong>hộp thoại xác nhận</strong>{" "}
+                trước khi chuyển nhóm.
               </span>
             </li>
           </ol>
@@ -456,6 +567,114 @@ export function RosterView({
               Chuyển nhóm
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog xác nhận chuyển cụm nhiều HS */}
+      <Dialog open={!!bulkMoveConfirm} onOpenChange={(v) => !v && setBulkMoveConfirm(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-heading">
+              <MoveRight className="size-5 text-primary" />
+              Xác nhận chuyển nhóm
+            </DialogTitle>
+            <DialogDescription>
+              {bulkMoveConfirm &&
+                (() => {
+                  const to = groups.find((g) => g.id === bulkMoveConfirm.toGroupId)
+                  return (
+                    <span>
+                      Có học sinh trong cụm đang thuộc nhóm khác. Chuyển{" "}
+                      <strong>{bulkMoveConfirm.studentIds.length} em</strong> sang{" "}
+                      <strong>{to?.name}</strong>?
+                    </span>
+                  )
+                })()}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-row justify-end gap-2">
+            <Button variant="outline" onClick={() => setBulkMoveConfirm(null)}>
+              Hủy
+            </Button>
+            <Button
+              onClick={() => {
+                if (!bulkMoveConfirm) return
+                applyMoveMany(bulkMoveConfirm.studentIds, bulkMoveConfirm.toGroupId)
+                setSelectedStudentIds([])
+                setBulkMoveConfirm(null)
+              }}
+            >
+              Chuyển nhóm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog gán nhóm trưởng */}
+      <Dialog open={!!leaderDialogGroupId} onOpenChange={(v) => !v && setLeaderDialogGroupId(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-heading">
+              <Crown className="size-5 text-amber-500" />
+              Chọn nhóm trưởng
+            </DialogTitle>
+            <DialogDescription>
+              Nhóm trưởng phải là thành viên của chính nhóm đó và được tự chọn thêm thành viên.
+            </DialogDescription>
+          </DialogHeader>
+          {(() => {
+            const g = groups.find((x) => x.id === leaderDialogGroupId)
+            if (!g) return null
+            const members = students
+              .filter((s) => (memberMap[g.id] ?? []).includes(s.id))
+              .sort((a, b) => a.slot_number - b.slot_number)
+            return (
+              <div className="flex flex-col gap-1.5">
+                {members.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Nhóm chưa có học sinh nào. Hãy thêm thành viên trước.
+                  </p>
+                )}
+                {members.map((m) => {
+                  const isLeader = g.leader_student_id === m.id
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        handleSetLeader(g.id, isLeader ? null : m.id)
+                        setLeaderDialogGroupId(null)
+                      }}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-md border px-2.5 py-2 text-sm text-left transition",
+                        isLeader
+                          ? "border-amber-400 bg-amber-50 ring-1 ring-amber-300"
+                          : "border-border hover:bg-muted/50",
+                      )}
+                    >
+                      <AvatarInitials
+                        name={m.name}
+                        seed={`${classId}-${m.slot_number}`}
+                        size="xs"
+                      />
+                      <span className="text-[10px] tabular-nums font-semibold bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
+                        {m.slot_number}
+                      </span>
+                      <span className="flex-1 font-medium truncate">
+                        {m.name?.trim() || "—"}
+                      </span>
+                      {isLeader && (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600">
+                          <Crown className="size-3.5" aria-hidden="true" />
+                          Nhóm trưởng
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -528,6 +747,19 @@ export function RosterView({
                 <ListPlus className="size-4 mr-1" aria-hidden="true" />
                 Dán danh sách
               </Button>
+              {selectedStudentIds.length > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setSelectedStudentIds([])}
+                  className="text-primary border border-primary/30"
+                >
+                  Bỏ chọn
+                  <span className="ml-1 rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground tabular-nums">
+                    {selectedStudentIds.length}
+                  </span>
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={downloadTemplate}>
                 <Download className="size-4 mr-1" aria-hidden="true" />
                 Tải mẫu Excel
@@ -629,6 +861,8 @@ export function RosterView({
               {students.map((s) => {
                 const g = studentToGroup.get(s.id)
                 const hasName = !!s.name?.trim()
+                const isSelected = selectedStudentIds.includes(s.id)
+                const isLeader = groups.some((x) => x.leader_student_id === s.id)
                 return (
                   <li
                     key={s.id}
@@ -640,17 +874,29 @@ export function RosterView({
                       }
                       setDragStudentId(s.id)
                       e.dataTransfer.effectAllowed = "move"
-                      e.dataTransfer.setData("text/plain", s.id)
+                      if (isSelected) {
+                        // Kéo theo cụm: mang danh sách id đã chọn
+                        e.dataTransfer.setData("application/x-student-ids", JSON.stringify(selectedStudentIds))
+                      } else {
+                        e.dataTransfer.setData("text/plain", s.id)
+                      }
                     }}
                     onDragEnd={() => {
                       setDragStudentId(null)
                       setDragOverGroupId(null)
+                    }}
+                    onClick={(e) => {
+                      if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault()
+                        toggleSelectStudent(s.id)
+                      }
                     }}
                     className={cn(
                       "group rounded-lg border bg-card transition px-2.5 py-2 flex items-center gap-2.5",
                       hasName ? "cursor-grab active:cursor-grabbing" : "opacity-70",
                       dragStudentId === s.id && "opacity-40",
                       !g && "hover:bg-muted/30",
+                      isSelected && "ring-2 ring-primary ring-offset-1",
                     )}
                     style={g ? groupCardStyle(g.color) : undefined}
                     title={
@@ -679,6 +925,12 @@ export function RosterView({
                           placeholder="Chưa có tên"
                           onBlur={(e) => onRenameStudent(s.id, e.target.value)}
                         />
+                        {isLeader && (
+                          <Crown
+                            className="size-4 shrink-0 text-amber-500"
+                            aria-label="Nhóm trưởng"
+                          />
+                        )}
                       </div>
                       {g && (
                         <span
@@ -735,9 +987,21 @@ export function RosterView({
                   }}
                   onDrop={(e) => {
                     e.preventDefault()
-                    const sid = e.dataTransfer.getData("text/plain") || dragStudentId
                     setDragOverGroupId(null)
                     setDragStudentId(null)
+                    const manyRaw = e.dataTransfer.getData("application/x-student-ids")
+                    if (manyRaw) {
+                      try {
+                        const ids = JSON.parse(manyRaw) as string[]
+                        if (Array.isArray(ids) && ids.length > 0) {
+                          handleDropMany(ids, g.id)
+                          return
+                        }
+                      } catch {
+                        // fall qua kéo đơn
+                      }
+                    }
+                    const sid = e.dataTransfer.getData("text/plain") || dragStudentId
                     if (sid) handleDrop(g.id, sid)
                   }}
                   className={cn(
@@ -767,7 +1031,16 @@ export function RosterView({
                         style={{ backgroundColor: g.color }}
                         aria-hidden="true"
                       />
-                      <p className="font-medium text-sm truncate">{g.name}</p>
+                      <p className="font-medium text-sm truncate">
+                        {g.name}
+                        {g.leader_student_id && (
+                          <span className="ml-1.5 inline-flex items-center gap-0.5 align-middle rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] font-semibold text-amber-700">
+                            <Crown className="size-3" aria-hidden="true" />
+                            {students.find((s) => s.id === g.leader_student_id)?.name?.trim() ||
+                              "Trưởng nhóm"}
+                          </span>
+                        )}
+                      </p>
                       <span
                         className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium border shrink-0"
                         style={groupPillStyle(g.color)}
@@ -775,14 +1048,31 @@ export function RosterView({
                         {members.length} HS
                       </span>
                     </button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onRemoveGroup(g.id)}
-                      aria-label="Xóa nhóm"
-                    >
-                      <Trash2 className="size-4 text-destructive" aria-hidden="true" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setLeaderDialogGroupId(g.id)}
+                        aria-label="Gán nhóm trưởng"
+                        title="Gán nhóm trưởng"
+                      >
+                        <Crown
+                          className={cn(
+                            "size-4",
+                            g.leader_student_id ? "text-amber-500" : "text-muted-foreground/60",
+                          )}
+                          aria-hidden="true"
+                        />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onRemoveGroup(g.id)}
+                        aria-label="Xóa nhóm"
+                      >
+                        <Trash2 className="size-4 text-destructive" aria-hidden="true" />
+                      </Button>
+                    </div>
                   </div>
                   {/* Preview avatars khi thu gọn */}
                   {!expanded && members.length > 0 && (

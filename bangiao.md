@@ -99,7 +99,7 @@ Sửa **`app/c/[token]/page.tsx`** + **`class-lobby.tsx`**:
 
 - [x] **PHẦN 1 — DB** (`scripts/060_group_leaders.sql`)
 - [x] **PHẦN 2 — Server actions** (`app/actions.ts`)
-- [ ] **PHẦN 3 — Phía GV** (`roster-view.tsx` + `roster/page.tsx`)
+- [x] **PHẦN 3 — Phía GV** (`roster-view.tsx` + `roster/page.tsx`)
 - [ ] **PHẦN 4 — Phía HS + kiểm thử** (`class-lobby.tsx` + `c/[token]/page.tsx` + eslint/tsc)
 
 > Mỗi phiên khi hoàn thành sẽ đánh dấu [x] và ghi chi tiết vào phần "Ghi chú phiên vừa rồi" + "Yêu cầu phiên sau" bên dưới.
@@ -125,22 +125,42 @@ Sửa **`app/c/[token]/page.tsx`** + **`class-lobby.tsx`**:
   - `leaderUpdateGroupMembersAction({classId, leaderStudentId, deviceToken, targetStudentId, action})`: xác thực leader + device_token qua bảng `students`; chỉ add HS chưa thuộc nhóm nào (ở nhóm khác → chặn, "Chỉ giáo viên mới đổi được"); leader không tự gỡ mình; remove chỉ áp dụng cho thành viên trong nhóm mình.
   - Đã chạy `pnpm exec tsc --noEmit` (exit 0) + `pnpm exec eslint app/actions.ts` (sạch).
 
+### Phiên 3 — Đã hoàn thành Phần 3 (Phía GV)
+- Sửa trên nhánh `260821-feat-code-improvements` (commit `phiên 3`):
+  - `app/classes/[id]/roster/page.tsx`: select `class_groups` thêm `leader_student_id`.
+  - `app/classes/[id]/roster/roster-view.tsx`:
+    - Type `Group` thêm `leader_student_id: string | null`; import thêm `Crown` (lucide-react), actions `moveStudentsToGroupAction`, `setGroupLeaderAction`.
+    - State mới: `selectedStudentIds`, `leaderDialogGroupId`, `bulkMoveConfirm`.
+    - Hàm mới: `applyMoveMany(studentIds, toGroupId|null)` (optimistic + gọi `moveStudentsToGroupAction`), `toggleSelectStudent`, `handleDropMany(studentIds, toGroupId)` (HS ở nhóm khác → mở `bulkMoveConfirm`; còn lại thêm thẳng + clear selection), `handleSetLeader(groupId, leaderStudentId|null)` (optimistic + gọi `setGroupLeaderAction`).
+    - Thẻ HS trái: `onClick` Ctrl/Cmd+click toggle chọn, `ring-2 ring-primary` khi chọn; `onDragStart` nếu HS đang chọn → dataTransfer = `application/x-student-ids` (JSON danh sách id), ngược lại `text/plain` đơn; badge Crown cạnh tên HS khi là leader.
+    - Cột nhóm: header thêm nút Crown (mở dialog gán leader) bên cạnh nút xóa; badge Crown + tên leader cạnh tên nhóm; `onDrop` parse JSON danh sách → `handleDropMany`, ngược lại kéo đơn như cũ.
+    - Dialog mới: gán nhóm trưởng (danh sách members của nhóm, click chọn/gỡ leader, optimistic update `groups`, highlight leader bằng ring amber), xác nhận kéo cụm (`bulkMoveConfirm`).
+    - Nút "Bỏ chọn" + bộ đếm "Đã chọn N em" ở header danh sách HS.
+    - Modal hướng dẫn: từ 4 → 7 bước (thêm gán nhóm trưởng, chọn nhiều HS, xác nhận kéo cụm).
+  - Đã chạy `pnpm exec tsc --noEmit` (exit 0) + `pnpm exec eslint` trên 2 file roster (exit 0).
+
 ---
 
 ## YÊU CẦU PHIÊN SAU
 
-### Phiên 3 — Phía GV (`app/classes/[id]/roster/page.tsx` + `roster-view.tsx`)
+### Phiên 4 — Phía HS + kiểm thử cuối (`app/c/[token]/page.tsx` + `app/c/[token]/class-lobby.tsx`)
 Trước khi code, đọc:
-- `app/classes/[id]/roster/page.tsx` — server component, query `students` + `class_groups` + `class_group_members`, truyền props xuống `RosterView`.
-- `app/classes/[id]/roster/roster-view.tsx` — `RosterView` client component, hiện có kéo-thả 1 HS, các action `moveStudentToGroupAction`, `setGroupMembersAction`, `removeClassGroupAction`, `addClassGroupAction`.
-- `app/actions.ts` — đã có sẵn từ Phần 2: `moveStudentsToGroupAction`, `setGroupLeaderAction`.
+- `app/c/[token]/page.tsx` (42 dòng) — server component, query theo `share_token`. Đang fetch `students` + `sessions`. Select `classes: id, name, capacity, share_token`.
+- `app/c/[token]/class-lobby.tsx` (~295 dòng) — `ClassLobby` client component. Đọc kỹ: type `Student`/`Session` (dòng 14-28), `getDeviceToken()` (localStorage `device_token`), identity từ localStorage `class_${classId}_student` (dòng 60-75), realtime channel `lobby-${classId}` (dòng 78-119, hiện chỉ subscribe `students` + `sessions`), claimSlot (dòng 121-131), UI chọn ô khi chưa có `myStudentId` (dòng 139-208), lobby chính (dòng 210-255).
+- `app/actions.ts` — có sẵn từ Phần 2: `leaderUpdateGroupMembersAction({ classId, leaderStudentId, deviceToken, targetStudentId, action: "add"|"remove" })` trả `{ ok, error? }`.
+- `@/components/avatar-initials`, `@/components/ui/dialog`, `lucide-react` (cần thêm `Crown`, `Lock`, `Minus` nếu chưa import).
+
+Những thứ ĐÃ CÓ sẵn (không tạo lại): `getDeviceToken()`, `students` state (có `device_token`), `myStudentId`, `claimSlot`, `changeSlot`, channel `lobby-${classId}` realtime, UI `Dialog`/`Button`/`Card`/`AvatarInitials`.
 
 Công việc cần làm:
-1. `page.tsx`: select `class_groups` thêm `leader_student_id`.
-2. `roster-view.tsx`:
-   - Type `Group` thêm `leader_student_id: string | null`.
-   - State mới: `selectedStudentIds`, `leaderDialogGroupId`, `bulkMoveConfirm`.
-   - Đa chọn: Ctrl/Cmd+click chọn/bỏ chọn (ring highlight), nút "Bỏ chọn" + đếm "Đã chọn N em"; kéo thẻ đã chọn → dataTransfer mang JSON danh sách id → thả vào nhóm → thêm tất cả; HS ở nhóm khác → dialog xác nhận; kéo thẻ chưa chọn giữ hành vi đơn cũ.
-   - Mỗi nhóm: nút Crown mở dialog gán leader (chọn 1 HS trong nhóm, click lại để gỡ); badge Crown cạnh tên leader ở cột nhóm và thẻ HS trái.
-   - Cập nhật modal hướng dẫn (localStorage `roster_intro_seen_${classId}`) từ 4 → 7 bước.
-3. Chạy `pnpm exec tsc --noEmit` + `pnpm exec eslint` trên 2 file roster → sạch, rồi cập nhật bangiao.md và commit.
+1. `app/c/[token]/page.tsx`: thêm fetch `class_groups` (select `id, name, color, leader_student_id`) và `class_group_members` (select `class_group_id, student_id`) của lớp; truyền xuống `ClassLobby` dưới props mới `groups` + `members`.
+2. `class-lobby.tsx`:
+   - Thêm props `groups: { id; name; color; leader_student_id }[]` và `members: { class_group_id; student_id }[]`. Tạo state tương ứng (khởi tạo từ props).
+   - Realtime: subscribe thêm `class_groups` (filter `class_id=eq.${classId}`) và `class_group_members` (không filter, giống roster) trong channel `lobby-${classId}` hiện có — khi đổi thì refetch như roster-view.
+   - Sau khi có `myStudentId` (đã nhận diện tên): tìm `myGroup = members` → group chứa mình, và `myLeaderGroup = groups.find(g => g.leader_student_id === myStudentId)`.
+   - Nếu `myLeaderGroup` → hiện nút "Chọn thành viên cho nhóm [tên]" → mở dialog/màn hình danh sách cả lớp (avatar + tên + STT): thẻ HS trạng thái: chưa phân nhóm → click thêm vào nhóm mình (gọi `leaderUpdateGroupMembersAction` action "add"); ở nhóm mình → hiện "Nhóm em" + nút gỡ (action "remove", không cho gỡ chính mình); ở nhóm khác → khóa (icon `Lock`) hiện tên nhóm, không click được.
+   - UI chọn ô ban đầu (khi chưa có `myStudentId`) có thể giữ nguyên; chỉ thêm phần leader sau khi nhận diện xong.
+3. Sau khi code: chạy `pnpm exec tsc --noEmit` + `pnpm exec eslint` toàn bộ dự án (hoặc tối thiểu 2 file này + `app/actions.ts`).
+4. Nếu tsc/eslint sạch → đánh dấu xong Phần 4, cập nhật `bangiao.md` và ghi chú rằng toàn bộ 4 phiên đã hoàn thành; nhắc commit code tính năng trên nhánh `260821-feat-code-improvements`.
+
+Lưu ý: ràng buộc "HS ở nhóm khác thì chặn" đã xử lý phía server (`leaderUpdateGroupMembersAction`) — UI chỉ cần hiển thị khóa. Không phá vỡ luồng claim slot / đổi ô hiện tại.
